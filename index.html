@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ASTILLERO // ÓRBITA</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body class="state-build">
+
+<canvas id="game"></canvas>
+<div id="vignette"></div>
+
+<!-- ======================= UI ======================= -->
+<header id="topbar">
+  <div class="brand">ASTILLERO<span class="dim">//</span>ÓRBITA</div>
+  <nav>
+    <button id="tab-build"  class="tab active">CONSTRUIR</button>
+    <button id="tab-hangar" class="tab">HANGAR</button>
+  </nav>
+  <div class="top-right">
+    <button id="btn-mute" class="ghost" title="Silenciar (M)">SND</button>
+  </div>
+</header>
+
+<!-- Panel de bloques (constructor) -->
+<aside id="palette" class="panel build-ui">
+  <h3>BLOQUES</h3>
+  <div id="palette-list"></div>
+  <div id="block-info" class="info"></div>
+</aside>
+
+<!-- Estadísticas de la nave (constructor) -->
+<aside id="stats" class="panel build-ui">
+  <h3>NAVE</h3>
+  <div id="ship-stats"></div>
+  <div id="validation"></div>
+  <h3 class="spaced">CONTROLES</h3>
+  <div class="help">
+    <p><b>LMB</b> colocar · <b>RMB</b> borrar</p>
+    <p><b>R</b> rotar bloque · <b>rueda</b> zoom</p>
+    <p><b>MMB / Space+arrastrar</b> mover vista</p>
+    <p><b>Ctrl+Z / Ctrl+Y</b> deshacer · rehacer</p>
+    <hr>
+    <p class="dim">EN VUELO:</p>
+    <p><b>W/S</b> empuje · <b>A/D</b> girar</p>
+    <p><b>Q/E</b> lateral · <b>Espacio</b> láser</p>
+    <p><b>T</b> SAS · <b>X</b> frenar giro · <b>Esc</b> volver</p>
+  </div>
+</aside>
+
+<!-- Barra inferior (constructor) -->
+<div id="buildbar" class="build-ui">
+  <input id="ship-name" type="text" maxlength="24" value="NAVE-01" spellcheck="false">
+  <button id="btn-clear" class="ghost">LIMPIAR</button>
+  <button id="btn-save"  class="ghost">GUARDAR</button>
+  <button id="btn-launch" class="primary">DESPEGAR ▲</button>
+</div>
+
+<!-- HUD (vuelo) -->
+<div id="hud" class="flight-ui">
+  <div class="hud-left">
+    <div class="meter"><label>COMBUSTIBLE</label>
+      <div class="bar"><div id="bar-fuel" class="fill fuel"></div></div>
+      <span id="txt-fuel" class="val"></span></div>
+    <div class="meter"><label>ENERGÍA</label>
+      <div class="bar"><div id="bar-power" class="fill power"></div></div>
+      <span id="txt-power" class="val"></span></div>
+    <div class="meter"><label>INTEGRIDAD</label>
+      <div class="bar"><div id="bar-hull" class="fill hull"></div></div>
+      <span id="txt-hull" class="val"></span></div>
+  </div>
+  <div class="hud-right">
+    <div class="readout"><label>VEL</label><span id="txt-vel">0</span><small>m/s</small></div>
+    <div class="readout"><label>SAS</label><span id="txt-sas" class="off">OFF</span></div>
+    <div class="readout"><label>OLA</label><span id="txt-wave">1</span></div>
+    <div class="readout"><label>HOSTILES</label><span id="txt-enemies">0</span></div>
+  </div>
+  <div id="alerts"></div>
+</div>
+
+<!-- Hangar -->
+<div id="hangar" class="hangar-ui panel-full">
+  <div class="hangar-col">
+    <h3>MIS NAVES</h3>
+    <div id="hangar-list" class="ship-grid"></div>
+    <div class="hangar-actions">
+      <button id="btn-import" class="ghost">IMPORTAR CÓDIGO</button>
+    </div>
+  </div>
+  <div class="hangar-col">
+    <h3>NAVES PUBLICADAS</h3>
+    <p class="dim small">Las naves publicadas se comparten mediante código. Pega un código con IMPORTAR para añadir naves de otros.</p>
+    <div id="published-list" class="ship-grid"></div>
+  </div>
+</div>
+
+<div id="overlay-msg"></div>
+<div id="toast"></div>
+
+<!-- ======================= MOTOR ======================= -->
+<!-- núcleo -->
+<script src="js/core/const.js"></script>
+<script src="js/core/eventbus.js"></script>   <!-- Patrón: Observer -->
+<script src="js/core/sfx.js"></script>        <!-- Patrón: Singleton -->
+<script src="js/core/camera.js"></script>
+<!-- datos -->
+<script src="js/data/blocks.js"></script>     <!-- Patrón: Factory -->
+<!-- efectos -->
+<script src="js/fx/starfield.js"></script>
+<script src="js/fx/particles.js"></script>    <!-- Patrón: Object Pool -->
+<!-- simulación -->
+<script src="js/sim/ship.js"></script>
+<script src="js/sim/world.js"></script>
+<!-- inteligencia -->
+<script src="js/ai/ai.js"></script>           <!-- Patrón: Strategy -->
+<!-- construcción -->
+<script src="js/build/commands.js"></script>  <!-- Patrón: Command -->
+<script src="js/build/builder.js"></script>
+<!-- persistencia -->
+<script src="js/storage/hangar.js"></script>  <!-- Patrón: Facade -->
+<!-- estados -->
+<script src="js/states/statemachine.js"></script> <!-- Patrón: State -->
+<script src="js/states/buildstate.js"></script>
+<script src="js/states/flightstate.js"></script>
+<script src="js/states/hangarstate.js"></script>
+<!-- arranque -->
+<script src="js/main.js"></script>
+</body>
+</html>
