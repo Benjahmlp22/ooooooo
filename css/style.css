@@ -1,0 +1,212 @@
+/* ============================================================
+   ASTILLERO // ÓRBITA — estética minimalista técnica
+   ============================================================ */
+:root{
+  --bg:        #0b0e13;
+  --panel:     rgba(14,18,26,.92);
+  --line:      rgba(180,205,230,.10);
+  --line-hi:   rgba(180,205,230,.25);
+  --ink:       #c8d6e5;
+  --ink-dim:   #5c6b7d;
+  --accent:    #6ee7ff;
+  --fuel:      #ffb454;
+  --power:     #a3e635;
+  --danger:    #ff5d5d;
+  --font: "SF Mono","JetBrains Mono","Cascadia Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden}
+body{
+  background:var(--bg);
+  color:var(--ink);
+  font-family:var(--font);
+  font-size:12px;
+  user-select:none;
+  -webkit-user-select:none;
+}
+
+#game{position:fixed;inset:0;display:block}
+
+#vignette{
+  position:fixed;inset:0;pointer-events:none;z-index:5;
+  background:radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,.45) 100%);
+}
+
+/* ---------- barra superior ---------- */
+#topbar{
+  position:fixed;top:0;left:0;right:0;height:44px;z-index:20;
+  display:flex;align-items:center;gap:24px;padding:0 16px;
+  background:linear-gradient(to bottom, rgba(11,14,19,.95), rgba(11,14,19,.75));
+  border-bottom:1px solid var(--line);
+}
+.brand{font-size:13px;letter-spacing:.28em;color:var(--ink)}
+.brand .dim{color:var(--accent);margin:0 2px}
+#topbar nav{display:flex;gap:8px}
+.top-right{margin-left:auto}
+
+/* ---------- botones ---------- */
+button{
+  font-family:var(--font);font-size:11px;letter-spacing:.14em;
+  color:var(--ink);background:transparent;
+  border:1px solid var(--line-hi);
+  padding:7px 14px;cursor:pointer;
+  transition:border-color .15s, color .15s, background .15s;
+}
+button:hover{border-color:var(--accent);color:var(--accent)}
+button.primary{border-color:var(--accent);color:var(--accent)}
+button.primary:hover{background:rgba(110,231,255,.1)}
+button.ghost{border-color:var(--line)}
+button.tab{border:none;border-bottom:1px solid transparent;padding:14px 6px 12px;color:var(--ink-dim)}
+button.tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+button.danger:hover{border-color:var(--danger);color:var(--danger)}
+button:disabled{opacity:.35;cursor:default}
+
+/* ---------- paneles ---------- */
+.panel{
+  position:fixed;z-index:15;
+  background:var(--panel);
+  border:1px solid var(--line);
+  padding:14px;
+  backdrop-filter:blur(3px);
+}
+.panel h3{
+  font-size:10px;letter-spacing:.3em;color:var(--ink-dim);
+  font-weight:400;margin-bottom:10px;
+}
+.panel h3.spaced{margin-top:16px}
+
+#palette{top:60px;left:12px;width:196px;max-height:calc(100vh - 140px);overflow-y:auto}
+#stats{top:60px;right:12px;width:216px;max-height:calc(100vh - 140px);overflow-y:auto}
+
+.pal-cat{
+  font-size:8px;letter-spacing:.3em;color:var(--ink-dim);font-weight:400;
+  margin:12px 0 6px;padding-bottom:3px;border-bottom:1px solid var(--line);
+}
+.pal-cat:first-child{margin-top:0}
+.pal-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.pal-item{
+  border:1px solid var(--line);padding:6px 4px 4px;cursor:pointer;text-align:center;
+  transition:border-color .12s;
+}
+.pal-item:hover{border-color:var(--line-hi)}
+.pal-item.sel{border-color:var(--accent);background:rgba(110,231,255,.06)}
+.pal-item canvas{display:block;margin:0 auto 4px}
+.pal-item span{font-size:9px;letter-spacing:.08em;color:var(--ink-dim)}
+.pal-item.sel span{color:var(--accent)}
+.pal-item kbd{
+  display:block;font-size:8px;color:var(--ink-dim);opacity:.6;margin-top:2px;
+  font-family:var(--font);
+}
+
+.info{margin-top:12px;font-size:10px;line-height:1.7;color:var(--ink-dim);min-height:70px}
+.info b{color:var(--ink);font-weight:400}
+.info .t{color:var(--accent);letter-spacing:.1em;display:block;margin-bottom:2px}
+
+#ship-stats{font-size:10px;line-height:2}
+#ship-stats .row{display:flex;justify-content:space-between}
+#ship-stats .row span:first-child{color:var(--ink-dim)}
+#validation{margin-top:10px;font-size:10px;line-height:1.7}
+#validation .ok{color:var(--power)}
+#validation .err{color:var(--danger)}
+
+.help{font-size:10px;line-height:1.8;color:var(--ink-dim)}
+.help b{color:var(--ink);font-weight:400}
+.help hr{border:none;border-top:1px solid var(--line);margin:6px 0}
+.dim{color:var(--ink-dim)}
+.small{font-size:10px;line-height:1.5}
+
+/* ---------- barra de construcción ---------- */
+#buildbar{
+  position:fixed;bottom:16px;left:50%;transform:translateX(-50%);z-index:15;
+  display:none;gap:8px;align-items:center;
+  background:var(--panel);border:1px solid var(--line);padding:10px;
+}
+#ship-name{
+  font-family:var(--font);font-size:11px;letter-spacing:.12em;
+  background:transparent;border:1px solid var(--line);color:var(--ink);
+  padding:7px 10px;width:150px;outline:none;text-transform:uppercase;
+}
+#ship-name:focus{border-color:var(--line-hi)}
+
+/* ---------- HUD vuelo ---------- */
+#hud{position:fixed;inset:0;z-index:15;pointer-events:none}
+.hud-left{position:absolute;left:16px;bottom:16px;width:220px}
+.meter{margin-bottom:10px}
+.meter label{font-size:9px;letter-spacing:.25em;color:var(--ink-dim);display:block;margin-bottom:3px}
+.bar{height:3px;background:rgba(255,255,255,.07);position:relative}
+.fill{position:absolute;left:0;top:0;bottom:0;width:100%;transition:width .12s linear}
+.fill.fuel{background:var(--fuel)}
+.fill.power{background:var(--power)}
+.fill.hull{background:var(--accent)}
+.fill.shield{background:#8fd0ff;box-shadow:0 0 6px rgba(143,208,255,.6)}
+.meter .val{font-size:9px;color:var(--ink-dim)}
+
+.hud-right{position:absolute;right:16px;bottom:16px;text-align:right}
+.readout{margin-bottom:8px}
+.readout label{font-size:9px;letter-spacing:.25em;color:var(--ink-dim);margin-right:8px}
+.readout span{font-size:15px;color:var(--ink)}
+.readout small{font-size:9px;color:var(--ink-dim);margin-left:3px}
+.readout span.on{color:var(--power)}
+.readout span.off{color:var(--ink-dim)}
+
+#alerts{
+  position:absolute;top:64px;left:50%;transform:translateX(-50%);
+  text-align:center;font-size:10px;letter-spacing:.2em;line-height:2;
+}
+#alerts .alert{color:var(--danger);animation:blink 1s steps(2) infinite}
+#alerts .warn{color:var(--fuel)}
+@keyframes blink{50%{opacity:.25}}
+
+/* ---------- hangar ---------- */
+.panel-full{
+  position:fixed;top:44px;left:0;right:0;bottom:0;z-index:15;
+  background:var(--bg);
+  display:flex;gap:1px;overflow:hidden;
+}
+.hangar-col{
+  flex:1;padding:24px;overflow-y:auto;border-right:1px solid var(--line);
+}
+.hangar-col h3{font-size:10px;letter-spacing:.3em;color:var(--ink-dim);font-weight:400;margin-bottom:14px}
+.ship-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px;margin-top:12px}
+.ship-card{border:1px solid var(--line);padding:10px}
+.ship-card:hover{border-color:var(--line-hi)}
+.ship-card canvas{display:block;width:100%;background:#080a0e;margin-bottom:8px}
+.ship-card .name{font-size:11px;letter-spacing:.12em;margin-bottom:2px}
+.ship-card .meta{font-size:9px;color:var(--ink-dim);margin-bottom:8px}
+.ship-card .row{display:flex;gap:5px;flex-wrap:wrap}
+.ship-card .row button{padding:4px 8px;font-size:9px}
+.hangar-actions{margin-top:16px}
+.empty{color:var(--ink-dim);font-size:10px;letter-spacing:.1em;padding:20px 0}
+
+/* ---------- overlays ---------- */
+#overlay-msg{
+  position:fixed;top:38%;left:0;right:0;z-index:30;text-align:center;
+  pointer-events:none;font-size:20px;letter-spacing:.5em;color:var(--ink);
+  opacity:0;transition:opacity .4s;
+  text-shadow:0 0 24px rgba(110,231,255,.4);
+}
+#overlay-msg.show{opacity:1}
+#overlay-msg small{display:block;font-size:10px;letter-spacing:.3em;color:var(--ink-dim);margin-top:12px}
+#overlay-msg.danger{color:var(--danger);text-shadow:0 0 24px rgba(255,93,93,.4)}
+
+#toast{
+  position:fixed;bottom:90px;left:50%;transform:translateX(-50%);z-index:40;
+  font-size:10px;letter-spacing:.15em;color:var(--accent);
+  background:var(--panel);border:1px solid var(--line);
+  padding:8px 16px;opacity:0;transition:opacity .3s;pointer-events:none;
+}
+#toast.show{opacity:1}
+
+/* ---------- visibilidad por estado (patrón State reflejado en CSS) ---------- */
+.build-ui,.flight-ui,.hangar-ui{display:none}
+body.state-build  .build-ui{display:block}
+body.state-build  #buildbar{display:flex}
+body.state-flight .flight-ui{display:block}
+body.state-hangar .hangar-ui{display:flex}
+body.state-flight #topbar{opacity:0;pointer-events:none;transition:opacity .5s}
+
+/* scrollbars */
+::-webkit-scrollbar{width:6px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--line-hi)}
