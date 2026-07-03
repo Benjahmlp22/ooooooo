@@ -377,7 +377,9 @@ const BlockFactory = {
       hp: def.hp,
       throttle: 0,          // nivel de encendido (propulsores)
       cooldown: 0,          // recarga (armas)
-      leakDir: null         // dirección fija de la fuga cuando ocurre
+      leakDir: null,        // dirección fija de la fuga cuando ocurre
+      heat: 0,              // calor de reentrada (0..1)
+      burning: 0            // segundos de incendio restantes
     };
     if (def.fuelCap)  b.fuel   = def.fuelCap;
     if (def.powerCap) b.charge = def.powerCap;

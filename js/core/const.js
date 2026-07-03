@@ -31,15 +31,30 @@ function rotV(x, y, ang) {
 const keyOf = (gx, gy) => gx + ',' + gy;
 
 /* ---------- ajustes del jugador (persistentes) ----------
-   assist=true  → modo ASISTIDO: amortiguación automática de giro
-                  y deriva, vuelo accesible.
-   assist=false → modo REALISTA: física newtoniana pura, solo SAS. */
+   Tres modos de vuelo:
+   ARCADE   → rotación directa y empuje total en cualquier dirección,
+              freno automático fuerte. Accesible y ágil.
+   ASISTIDO → física real por propulsor + amortiguación automática
+              de giro y deriva.
+   REALISTA → newtoniano puro: solo el SAS de a bordo te ayuda. */
+const FLIGHT_MODES = ['arcade', 'assist', 'real'];
+const MODE_LABELS = { arcade: 'ARCADE', assist: 'ASISTIDO', real: 'REALISTA' };
+
 const Settings = {
-  assist: (localStorage.getItem('orbita_assist') || '1') === '1',
-  setAssist(v) {
-    this.assist = v;
-    try { localStorage.setItem('orbita_assist', v ? '1' : '0'); } catch (e) {}
-    Events.emit('settings:assist', v);
+  mode: (() => {
+    const m = localStorage.getItem('orbita_mode');
+    return FLIGHT_MODES.includes(m) ? m : 'assist';
+  })(),
+  setMode(m) {
+    if (!FLIGHT_MODES.includes(m)) return;
+    this.mode = m;
+    try { localStorage.setItem('orbita_mode', m); } catch (e) {}
+    Events.emit('settings:mode', m);
   },
-  toggleAssist() { this.setAssist(!this.assist); return this.assist; }
+  cycleMode() {
+    const i = FLIGHT_MODES.indexOf(this.mode);
+    this.setMode(FLIGHT_MODES[(i + 1) % FLIGHT_MODES.length]);
+    return this.mode;
+  },
+  get assist() { return this.mode !== 'real'; }
 };

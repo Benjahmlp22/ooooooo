@@ -107,6 +107,25 @@ const Particles = (() => {
     spawn({ x: d.x, y: d.y, life: 1.3, size: 26, color: '110,231,255', shape: 'ring' });
   });
 
+  Events.on('explosion', d => {
+    if (d.kind === 'fuel') {
+      // bola de fuego: núcleo brillante + llamas persistentes + humo
+      burst(d.x, d.y, 18 * d.power + 8, { color: '255,150,60', spMax: 200 * d.power + 60, life: 0.8, glow: true, size: 4, drag: 0.9 });
+      burst(d.x, d.y, 10, { color: '255,215,120', spMax: 120, life: 0.5, glow: true, size: 3 });
+      burst(d.x, d.y, 8, { color: '110,116,126', spMax: 60, life: 2.2, size: 3, drag: 0.95, grow: 6 });
+      spawn({ x: d.x, y: d.y, life: 0.55, size: 9, color: '255,190,120', shape: 'ring' });
+    } else if (d.kind === 'reactor') {
+      burst(d.x, d.y, 30, { color: '190,255,170', spMax: 320, life: 0.9, glow: true, size: 4 });
+      burst(d.x, d.y, 16, { color: '255,255,230', spMax: 180, life: 0.4, glow: true, size: 3 });
+      burst(d.x, d.y, 12, { color: '110,116,126', spMax: 80, life: 2.6, size: 3.5, drag: 0.95, grow: 7 });
+      spawn({ x: d.x, y: d.y, life: 0.7, size: 12, color: '200,255,180', shape: 'ring' });
+      spawn({ x: d.x, y: d.y, life: 1.0, size: 22, color: '255,240,200', shape: 'ring' });
+    } else {
+      burst(d.x, d.y, 12, { color: '163,230,53', spMax: 190, life: 0.5, glow: true });
+      spawn({ x: d.x, y: d.y, life: 0.4, size: 7, color: '200,255,120', shape: 'ring' });
+    }
+  });
+
   Events.on('impact', d => {
     if (d.j > 350) burst(d.x, d.y, Math.min(12, d.j / 300), { color: '200,214,229', spMax: 120, life: 0.4 });
   });

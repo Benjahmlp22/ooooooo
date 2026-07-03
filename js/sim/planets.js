@@ -30,7 +30,7 @@ class Planet {
 
   generateFeatures(flora, craters) {
     const out = [];
-    const n = Math.floor(this.r / 9);              // densidad por circunferencia
+    const n = Math.floor(this.r / 14);             // densidad por circunferencia
     for (let i = 0; i < n; i++) {
       const a = (i / n) * TAU + this.rng() * 0.02;
       const roll = this.rng();
@@ -45,14 +45,16 @@ class Planet {
     return out;
   }
 
-  /* gravedad y densidad atmosférica en un punto */
+  /* gravedad y densidad atmosférica en un punto.
+     La densidad crece con exponente 2.4: el borde superior de la
+     atmósfera apenas frena — la entrada es progresiva, sin "muro". */
   fieldAt(x, y) {
     const dx = x - this.x, dy = y - this.y;
     const r = Math.hypot(dx, dy) || 1;
     const alt = r - this.r;
-    if (r > this.r * 7) return null;
+    if (r > this.r * 3.5) return null;   // esfera de influencia acotada
     const g = this.g * (this.r / r) * (this.r / r);
-    const dens = this.atmo > 0 ? Math.pow(clamp(1 - alt / this.atmo, 0, 1), 2) : 0;
+    const dens = this.atmo > 0 ? Math.pow(clamp(1 - alt / this.atmo, 0, 1), 2.4) : 0;
     return { gx: -dx / r * g, gy: -dy / r * g, nx: dx / r, ny: dy / r, alt, dens, r };
   }
 
@@ -168,20 +170,22 @@ class Planet {
   }
 }
 
-/* sistema por defecto: un mundo verde con gravedad terrestre y una luna gris */
+/* sistema por defecto: cuerpos ENORMES y lejanos, a escala.
+   Llegar a VERDANIA desde el punto de partida lleva ~40 s de crucero,
+   y el descenso atmosférico (5500 m) otro buen rato frenando. */
 function createDefaultPlanets() {
   return [
     new Planet({
       name: 'VERDANIA',
-      x: 2000, y: 17000, r: 5400,
+      x: 0, y: 92000, r: 22000,
       g: 235,                      // ~9.8 m/s² a escala de celda
-      atmo: 1200,
+      atmo: 5500,
       body: '#101b16', rim: 'rgba(140,210,170,0.4)', sky: '96,158,190',
       seed: 1337, flora: true
     }),
     new Planet({
       name: 'CENIZA',
-      x: -16000, y: -7000, r: 2500,
+      x: -88000, y: -42000, r: 8500,
       g: 82,
       atmo: 0,
       body: '#14161a', rim: 'rgba(170,178,188,0.35)', sky: '120,120,130',

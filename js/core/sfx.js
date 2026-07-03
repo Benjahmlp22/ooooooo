@@ -251,6 +251,7 @@ const SFX = (() => {
   Events.on('shield:hit',      () => api.shieldHit());
   Events.on('block:destroyed', () => api.boom(false));
   Events.on('ship:destroyed',  () => api.boom(true));
+  Events.on('explosion',       d  => { if (d.kind === 'reactor') api.boom(true); });
   Events.on('impact',          d  => { if (d.j > 700) api.hit(); });
   Events.on('spark',           () => api.spark());
   Events.on('repair:tick',     () => api.weld());

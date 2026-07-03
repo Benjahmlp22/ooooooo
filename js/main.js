@@ -105,16 +105,16 @@ const Game = {
       UI.toast(muted ? 'SONIDO DESACTIVADO' : 'SONIDO ACTIVADO');
     });
 
-    // modo de vuelo ASISTIDO / REALISTA (persistente; G en vuelo)
+    // modo de vuelo ARCADE / ASISTIDO / REALISTA (persistente; G en vuelo)
     const btnAssist = document.getElementById('btn-assist');
-    const syncAssist = () => { btnAssist.textContent = Settings.assist ? 'ASISTIDO' : 'REALISTA'; };
-    syncAssist();
+    const syncMode = () => { btnAssist.textContent = MODE_LABELS[Settings.mode]; };
+    syncMode();
     btnAssist.addEventListener('click', () => {
       Events.emit('ui:click');
-      const v = Settings.toggleAssist();
-      UI.toast('MODO DE VUELO: ' + (v ? 'ASISTIDO' : 'REALISTA'));
+      const m = Settings.cycleMode();
+      UI.toast('MODO DE VUELO: ' + MODE_LABELS[m]);
     });
-    Events.on('settings:assist', syncAssist);
+    Events.on('settings:mode', syncMode);
   },
 
   loop(t) {

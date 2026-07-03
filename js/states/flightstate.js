@@ -19,6 +19,7 @@ class FlightState extends GameState {
     this.keys = new Set();
     this.hudTick = 0;
     this.atmo = { dens: 0, sky: '96,150,200', alt: Infinity, planet: null };
+    this.streaks = [];        // estelas anamórficas de velocidad
 
     Events.on('wave:start',   d => { if (this.active()) UI.overlay(`OLA ${d.wave}`, 'contactos hostiles detectados', '', 1800); });
     Events.on('wave:cleared', d => { if (this.active()) UI.overlay('SECTOR DESPEJADO', 'siguiente ola en 5 s', '', 2200); });
@@ -68,8 +69,8 @@ class FlightState extends GameState {
       if (p && p.alive) { p.sas = !p.sas; UI.toast('SAS ' + (p.sas ? 'ACTIVADO' : 'DESACTIVADO')); }
     }
     if (e.code === 'KeyG') {
-      const v = Settings.toggleAssist();
-      UI.toast('MODO ' + (v ? 'ASISTIDO' : 'REALISTA'));
+      const m = Settings.cycleMode();
+      UI.toast('MODO DE VUELO: ' + MODE_LABELS[m]);
     }
   }
 
@@ -130,8 +131,43 @@ class FlightState extends GameState {
       }
     }
 
+    this.updateStreaks(dt);
+
     this.hudTick -= dt;
     if (this.hudTick <= 0) { this.hudTick = 0.1; this.updateHud(); }
+  }
+
+  /* estelas anamórficas: nacen, fluyen contra el movimiento y se
+     desvanecen con curva suave — nada de líneas que aparecen de golpe */
+  updateStreaks(dt) {
+    const p = this.world.player;
+    const sp = p && p.alive ? Math.hypot(p.vel.x, p.vel.y) : 0;
+    const k = clamp((sp - 420) / 900, 0, 1);
+    const w = Game.canvas.width, h = Game.canvas.height;
+
+    if (k > 0 && p) {
+      const want = dt * 26 * k;
+      let n = Math.floor(want) + (Math.random() < want % 1 ? 1 : 0);
+      while (n-- > 0 && this.streaks.length < 46) {
+        // evitar el centro: no tapar la nave
+        let x, y, tries = 0;
+        do {
+          x = rand(0, w); y = rand(0, h);
+        } while (dist2(x, y, w / 2, h / 2) < 170 * 170 && ++tries < 6);
+        this.streaks.push({
+          x, y, life: 0, maxLife: rand(0.5, 1.0),
+          depth: rand(0.35, 1)          // paralaje: unas fluyen más rápido
+        });
+      }
+    }
+    for (const s of this.streaks) {
+      s.life += dt;
+      if (p && p.alive && sp > 1) {
+        s.x -= p.vel.x / sp * (sp * 0.5 * s.depth) * dt * this.camera.zoom;
+        s.y -= p.vel.y / sp * (sp * 0.5 * s.depth) * dt * this.camera.zoom;
+      }
+    }
+    this.streaks = this.streaks.filter(s => s.life < s.maxLife);
   }
 
   updateHud() {
@@ -165,8 +201,8 @@ class FlightState extends GameState {
     sas.textContent = p.sas ? 'ON' : 'OFF';
     sas.className = p.sas ? 'on' : 'off';
     const mode = document.getElementById('txt-mode');
-    mode.textContent = Settings.assist ? 'ASIST' : 'REAL';
-    mode.className = Settings.assist ? 'on' : 'off';
+    mode.textContent = Settings.mode === 'arcade' ? 'ARCADE' : Settings.mode === 'assist' ? 'ASIST' : 'REAL';
+    mode.className = Settings.mode !== 'real' ? 'on' : 'off';
     document.getElementById('txt-wave').textContent = this.world.wave || '—';
     document.getElementById('txt-enemies').textContent = this.world.enemies().length;
 
@@ -212,6 +248,7 @@ class FlightState extends GameState {
 
     for (const pl of this.world.planets) pl.render(ctx, this.camera, w, h);
 
+    this.drawDebris(ctx);
     Particles.draw(ctx);
 
     for (const s of this.world.ships) {
@@ -288,24 +325,53 @@ class FlightState extends GameState {
 
   drawSpeedStreaks(ctx, w, h, vx, vy) {
     const speed = Math.hypot(vx, vy);
-    const k = clamp((speed - 380) / 800, 0, 1);
-    if (k <= 0) return;
+    if (speed < 1 || this.streaks.length === 0) return;
+    const k = clamp((speed - 420) / 900, 0, 1);
     const dx = vx / speed, dy = vy / speed;
-    const len = 30 + k * 150;
-    ctx.strokeStyle = `rgba(160,200,235,${k * 0.28})`;
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    // pseudoaleatorio estable por franja de tiempo → parpadeo cinematográfico
-    const seed = Math.floor(this.time * 22);
-    for (let i = 0; i < 16; i++) {
-      const q = Math.sin(seed * 12.9898 + i * 78.233) * 43758.5453;
-      const rx = (q - Math.floor(q)) * w;
-      const q2 = Math.sin(seed * 39.346 + i * 11.135) * 24634.6345;
-      const ry = (q2 - Math.floor(q2)) * h;
-      ctx.moveTo(rx, ry);
-      ctx.lineTo(rx - dx * len, ry - dy * len);
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.lineCap = 'round';
+    for (const s of this.streaks) {
+      const t = s.life / s.maxLife;
+      const a = Math.sin(t * Math.PI) * k * 0.45 * s.depth;   // fundido suave
+      if (a <= 0.01) continue;
+      const len = (36 + speed * 0.14) * s.depth;
+      const x2 = s.x - dx * len, y2 = s.y - dy * len;
+      // degradado a lo largo de la estela: transparente → brillo → transparente
+      const g = ctx.createLinearGradient(s.x, s.y, x2, y2);
+      g.addColorStop(0, 'rgba(190,225,250,0)');
+      g.addColorStop(0.5, `rgba(200,230,252,${a})`);
+      g.addColorStop(1, 'rgba(190,225,250,0)');
+      ctx.strokeStyle = g;
+      ctx.lineWidth = 0.8 + 1.6 * s.depth * k;
+      ctx.beginPath();
+      ctx.moveTo(s.x, s.y);
+      ctx.lineTo(x2, y2);
+      ctx.stroke();
     }
-    ctx.stroke();
+    ctx.restore();
+  }
+
+  drawDebris(ctx) {
+    for (const d of this.world.debris) {
+      const a = clamp(d.life / 2.5, 0, 1);
+      ctx.save();
+      ctx.translate(d.x, d.y);
+      ctx.rotate(d.ang);
+      ctx.globalAlpha = a * 0.9;
+      drawBlockType(ctx, d.type, d.rot, d.size);
+      // chamuscado
+      ctx.fillStyle = `rgba(8,10,13,${0.45 + 0.3 * (1 - a)})`;
+      ctx.fillRect(-d.size / 2, -d.size / 2, d.size, d.size);
+      if (d.hot > 0.05) {
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.fillStyle = `rgba(255,150,60,${d.hot * 0.35})`;
+        ctx.fillRect(-d.size / 2, -d.size / 2, d.size, d.size);
+      }
+      ctx.restore();
+    }
+    ctx.globalAlpha = 1;
   }
 
   drawOffscreenMarkers(ctx, w, h) {

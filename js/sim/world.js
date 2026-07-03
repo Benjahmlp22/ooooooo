@@ -13,6 +13,7 @@ class World {
     this.ships = [];
     this.beams = [];
     this.projectiles = [];
+    this.debris = [];
     this.planets = createDefaultPlanets();
     this.player = null;
     this.wave = 0;
@@ -21,6 +22,7 @@ class World {
   }
 
   addShip(ship) {
+    ship.world = this;
     this.ships.push(ship);
     ship.updateWorldPositions();
     return ship;
@@ -36,6 +38,7 @@ class World {
     this.collide(dt);
     this.collidePlanets(dt);
     this.updateProjectiles(dt);
+    this.updateDebris(dt);
     this.ships = this.ships.filter(s => s.alive);
 
     for (const b of this.beams) b.life -= dt;
@@ -59,31 +62,41 @@ class World {
         s.vel.y += f.gy * dt;
 
         if (f.dens > 0) {
-          // arrastre atmosférico (exponencial, estable)
-          const k = Math.exp(-f.dens * 0.55 * dt);
+          // arrastre atmosférico (exponencial, estable y progresivo)
+          const k = Math.exp(-f.dens * 0.45 * dt);
           s.vel.x *= k; s.vel.y *= k;
           s.angVel *= Math.exp(-f.dens * 0.8 * dt);
 
-          // calentamiento de reentrada: plasma en el borde de ataque
+          // calentamiento de reentrada POR BLOQUE: la cara de ataque
+          // (los bloques más adelantados en la dirección de vuelo)
+          // acumula temperatura, como en la vida real
           const sp = Math.hypot(s.vel.x, s.vel.y);
-          if (f.dens > 0.12 && sp > 420) {
+          const heatLevel = clamp((sp - 380) / 850, 0, 1) * Math.pow(f.dens, 0.7);
+          if (heatLevel > 0.02) {
             s.reentry = true;
             const dx = s.vel.x / sp, dy = s.vel.y / sp;
-            const lx = s.pos.x + dx * s.radius * 0.8;
-            const ly = s.pos.y + dy * s.radius * 0.8;
-            const heat = clamp((sp - 420) / 700, 0, 1) * f.dens;
-            Lights.add(lx, ly, 90 + heat * 120, '255,150,70', 0.3 * heat + 0.1);
-            if (Math.random() < dt * 90 * heat) {
-              Particles.spawn({
-                x: lx + rand(-s.radius * 0.6, s.radius * 0.6),
-                y: ly + rand(-s.radius * 0.6, s.radius * 0.6),
-                vx: s.vel.x * 0.25 - dx * rand(80, 200) + rand(-60, 60),
-                vy: s.vel.y * 0.25 - dy * rand(80, 200) + rand(-60, 60),
-                life: rand(0.2, 0.55), size: rand(1.5, 3.5),
-                color: Math.random() < 0.6 ? '255,150,70' : '255,220,150',
-                drag: 0.93, glow: true
-              });
+            for (const b of s.blockArr) {
+              // exposición: proyección del bloque sobre la dirección de vuelo
+              const proj = ((b.wx - s.pos.x) * dx + (b.wy - s.pos.y) * dy) / s.radius;
+              const expo = Math.pow(clamp(proj * 0.55 + 0.62, 0, 1), 2);
+              const target = heatLevel * expo;
+              // sube rápido hacia el objetivo, baja despacio
+              b.heat += (target - b.heat) * Math.min(1, dt * (target > b.heat ? 3.2 : 1.1));
+              // plasma desprendiéndose de los bloques al rojo
+              if (b.heat > 0.3 && Math.random() < dt * 34 * b.heat) {
+                Particles.spawn({
+                  x: b.wx + rand(-6, 6), y: b.wy + rand(-6, 6),
+                  vx: s.vel.x * 0.3 - dx * rand(120, 320) + rand(-70, 70),
+                  vy: s.vel.y * 0.3 - dy * rand(120, 320) + rand(-70, 70),
+                  life: rand(0.2, 0.6), size: rand(1.4, 3.2),
+                  color: b.heat > 0.7 ? '255,225,160' : '255,150,70',
+                  drag: 0.94, glow: true
+                });
+              }
             }
+            const lx = s.pos.x + dx * s.radius * 0.7;
+            const ly = s.pos.y + dy * s.radius * 0.7;
+            Lights.add(lx, ly, 100 + heatLevel * 160, '255,150,70', 0.28 * heatLevel + 0.06);
           }
         }
       }
@@ -195,6 +208,87 @@ class World {
       ship.ai = d.strategy;
       ship.sas = true;
       this.addShip(ship);
+    }
+  }
+
+  /* ---------- escombros físicos ---------- */
+
+  spawnDebris(block, ship, boost) {
+    if (this.debris.length > 90) this.debris.shift();
+    const a = rand(0, TAU), sp = rand(20, 60) * (boost || 1);
+    this.debris.push({
+      type: block.type, rot: block.rot,
+      x: block.wx, y: block.wy,
+      vx: ship.vel.x + Math.cos(a) * sp,
+      vy: ship.vel.y + Math.sin(a) * sp,
+      ang: ship.angle, angVel: rand(-2.5, 2.5) * (boost || 1),
+      life: rand(7, 12), maxLife: 12,
+      size: CELL * rand(0.72, 0.95),
+      hot: (block.burning > 0 || block.heat > 0.4) ? 1 : 0
+    });
+  }
+
+  updateDebris(dt) {
+    for (const d of this.debris) {
+      d.life -= dt;
+      if (d.life <= 0) continue;
+      for (const pl of this.planets) {
+        const f = pl.fieldAt(d.x, d.y);
+        if (!f) continue;
+        d.vx += f.gx * dt; d.vy += f.gy * dt;
+        if (f.dens > 0) {
+          const k = Math.exp(-f.dens * 0.7 * dt);
+          d.vx *= k; d.vy *= k;
+        }
+        if (f.alt <= 0) {
+          // rebote amortiguado contra el suelo
+          const vn = d.vx * f.nx + d.vy * f.ny;
+          if (vn < 0) {
+            d.vx -= f.nx * vn * 1.3; d.vy -= f.ny * vn * 1.3;
+            d.vx *= 0.6; d.vy *= 0.6; d.angVel *= 0.5;
+          }
+          d.x = pl.x + f.nx * (pl.r + 4);
+          d.y = pl.y + f.ny * (pl.r + 4);
+        }
+      }
+      d.x += d.vx * dt;
+      d.y += d.vy * dt;
+      d.ang += d.angVel * dt;
+      if (d.hot) {
+        d.hot = Math.max(0, d.hot - dt * 0.25);
+        if (Math.random() < dt * 10 * d.hot) {
+          Particles.spawn({
+            x: d.x, y: d.y, vx: d.vx * 0.5 + rand(-15, 15), vy: d.vy * 0.5 + rand(-15, 15),
+            life: rand(0.3, 0.8), size: rand(1.2, 2.6),
+            color: '255,150,60', drag: 0.94, glow: true
+          });
+        }
+      }
+    }
+    this.debris = this.debris.filter(d => d.life > 0);
+  }
+
+  /* onda expansiva: daño en área con atenuación por distancia,
+     puede prender fuego a los bloques supervivientes */
+  explode(x, y, radius, dmg, igniteProb) {
+    Lights.flash(x, y, radius * 2.2, '255,180,110', 0.6, 0.5);
+    for (const s of [...this.ships]) {
+      if (!s.alive) continue;
+      const d0 = Math.hypot(s.pos.x - x, s.pos.y - y);
+      if (d0 > radius + s.radius) continue;
+      for (const b of [...s.blockArr]) {
+        if (!s.alive || !s.blocks.has(keyOf(b.gx, b.gy))) continue;
+        const d = Math.hypot(b.wx - x, b.wy - y);
+        if (d > radius || d < 0.001) continue;
+        const fall = 1 - d / radius;
+        // empujón de la onda
+        s.applyImpulse((b.wx - x) / d * dmg * 6 * fall, (b.wy - y) / d * dmg * 6 * fall, b.wx, b.wy);
+        s.damageBlock(b, dmg * fall, b.wx, b.wy);
+        if (igniteProb && s.alive && s.blocks.has(keyOf(b.gx, b.gy)) &&
+            Math.random() < igniteProb * fall) {
+          b.burning = Math.max(b.burning, rand(2, 4));
+        }
+      }
     }
   }
 

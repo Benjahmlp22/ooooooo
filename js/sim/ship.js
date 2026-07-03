@@ -152,14 +152,43 @@ class Ship {
     this.angle += this.angVel * dt;
   }
 
-  /* sistemas de a bordo: reactores, fugas, cortos, escudos, recargas */
+  /* sistemas de a bordo: reactores, fugas, cortos, escudos, fuego, calor */
   systems(dt) {
     this.leaking = false;
     this.shorting = false;
 
-    for (const b of this.blockArr) {
+    for (const b of [...this.blockArr]) {
+      if (!this.alive || !this.blocks.has(keyOf(b.gx, b.gy))) continue;
       const def = b.def;
       if (b.cooldown > 0) b.cooldown -= dt;
+
+      // calor de reentrada: fuera de la atmósfera se disipa
+      if (b.heat) {
+        if (!this.reentry) b.heat = Math.max(0, b.heat - dt * 0.5);
+        // al rojo vivo, el bloque se degrada (el blindaje resiste)
+        if (b.heat > 0.88) {
+          b.hp -= 7 * (1 - (def.resist || 0)) * dt;
+          if (b.hp <= 0) { this.destroyBlock(b); continue; }
+        }
+      }
+
+      // incendio: daño progresivo + llamas (se apaga reparando)
+      if (b.burning > 0) {
+        b.burning -= dt;
+        b.hp -= 5 * (1 - (def.resist || 0)) * dt;
+        if (Math.random() < dt * 26) {
+          Particles.spawn({
+            x: b.wx + rand(-7, 7), y: b.wy + rand(-7, 7),
+            vx: this.vel.x * 0.8 + rand(-22, 22), vy: this.vel.y * 0.8 + rand(-22, 22),
+            life: rand(0.25, 0.6), size: rand(1.6, 3.4),
+            color: Math.random() < 0.6 ? '255,150,60' : '255,215,120',
+            drag: 0.93, glow: true, grow: 2
+          });
+        }
+        if (Math.random() < dt * 2) this.smoke(b);
+        Lights.add(b.wx, b.wy, 46, '255,160,70', 0.16);
+        if (b.hp <= 0) { this.destroyBlock(b); continue; }
+      }
 
       // generación: reactor (quema combustible) o panel solar (gratis)
       if (def.powerGen) {
@@ -258,6 +287,7 @@ class Ship {
     const got = this.drawPower(want * COST) / COST;
     if (got <= 0.0001) { this.repairingBlock = null; return; }
     worst.hp = Math.min(worst.def.hp, worst.hp + got);
+    worst.burning = 0;                       // soldar también sofoca el fuego
 
     // chispas de soldadura
     if (Math.random() < dt * 26) {
@@ -272,10 +302,88 @@ class Ship {
     if (Math.random() < dt * 9) Events.emit('repair:tick', {});
   }
 
+  /* pluma de escape + luz de tobera (compartido por todos los modos) */
+  exhaustFX(b, effT, dt) {
+    const dir = DIRS[b.rot];
+    const wdir = rotV(dir.x, dir.y, this.angle);
+    const big = b.def.thrust > 3000;
+    const ex = b.wx - wdir.x * CELL * 0.6, ey = b.wy - wdir.y * CELL * 0.6;
+    Lights.add(ex - wdir.x * 12, ey - wdir.y * 12,
+      (big ? 55 : 26) + 40 * effT, '110,231,255', 0.2 * effT);
+    const rate = dt * (big ? 110 : 45) * effT;
+    let nP = Math.floor(rate) + (Math.random() < rate % 1 ? 1 : 0);
+    while (nP-- > 0) {
+      Particles.spawn({
+        x: ex + rand(-3, 3), y: ey + rand(-3, 3),
+        vx: this.vel.x - wdir.x * rand(220, 400) + rand(-25, 25),
+        vy: this.vel.y - wdir.y * rand(220, 400) + rand(-25, 25),
+        life: rand(0.12, 0.4), size: rand(1.2, 2.8),
+        color: Math.random() < 0.75 ? '140,220,255' : '255,240,200',
+        drag: 0.92, glow: true
+      });
+    }
+  }
+
+  /* MODO ARCADE: rotación directa y empuje total hacia donde pidas.
+     Sigue gastando combustible, pero ignora la colocación de toberas. */
+  controlArcade(dt) {
+    const it = this.intents;
+    this.throttleTotal = 0;
+
+    // rotación directa (sin física de par)
+    const targetW = (it.turnR - it.turnL) * 2.7;
+    this.angVel += (targetW - this.angVel) * Math.min(1, dt * 9);
+
+    let totalThrust = 0, totalUse = 0;
+    for (const b of this.blockArr) if (b.def.thrust) {
+      totalThrust += b.def.thrust; totalUse += b.def.fuelUse;
+    }
+
+    let dx = (it.latR - it.latL), dy = (it.back - it.fwd);
+    const mag = Math.hypot(dx, dy);
+    const fuelAvail = this.totalFuel() > 0.001;
+
+    if (mag > 0 && fuelAvail && totalThrust > 0) {
+      dx /= mag; dy /= mag;
+      const need = totalUse * dt;
+      const got = this.drawFuel(need);
+      const eff = need > 0 ? got / need : 0;
+      const F = totalThrust * 0.95 * eff;
+      const w = rotV(dx, dy, this.angle);
+      const ax = w.x * F / this.mass, ay = w.y * F / this.mass;
+      this.vel.x += ax * dt; this.vel.y += ay * dt;
+      this.felt.x += ax; this.felt.y += ay;
+      this.throttleTotal = eff;
+      // visual: encienden las toberas alineadas con la dirección pedida
+      for (const b of this.blockArr) {
+        if (!b.def.thrust) continue;
+        const d = DIRS[b.rot];
+        const align = d.x * dx + d.y * dy;
+        const act = align > 0.3 ? eff : 0;
+        b.throttle += (act - b.throttle) * Math.min(1, dt * 14);
+        if (b.throttle > 0.03) this.exhaustFX(b, b.throttle, dt);
+      }
+    } else {
+      // freno automático fuerte
+      if (!this.grounded) {
+        const sp = Math.hypot(this.vel.x, this.vel.y);
+        this.vel.x *= Math.pow(sp > 30 ? 0.35 : 0.03, dt);
+        this.vel.y *= Math.pow(sp > 30 ? 0.35 : 0.03, dt);
+      }
+      for (const b of this.blockArr) {
+        if (!b.def.thrust) continue;
+        b.throttle = Math.max(0, b.throttle - dt * 4);
+        if (b.throttle > 0.03) this.exhaustFX(b, b.throttle, dt);
+      }
+    }
+  }
+
   /* control de vuelo: asigna encendido a cada propulsor según la intención */
   control(dt) {
     const it = this.intents;
-    const assist = this.faction === 'player' && Settings.assist;
+    const mode = this.faction === 'player' ? Settings.mode : 'real';
+    if (mode === 'arcade') { this.controlArcade(dt); return; }
+    const assist = mode === 'assist';
     const fuelAvail = this.totalFuel() > 0.001;
     let fx = 0, fy = 0, torque = 0;
     this.throttleTotal = 0;
@@ -286,14 +394,16 @@ class Ship {
     if (assist && noTrans) {
       const lv = rotV(this.vel.x, this.vel.y, -this.angle);
       const sp = Math.hypot(lv.x, lv.y);
-      if (sp > 8) {
+      // solo frena a baja velocidad: el crucero interplanetario se conserva
+      if (sp > 8 && sp < 420) {
         br = {
           fwd:  lv.y >  8 ? clamp( lv.y / 240, 0, 1) : 0,
           back: lv.y < -8 ? clamp(-lv.y / 240, 0, 1) : 0,
           latL: lv.x >  8 ? clamp( lv.x / 240, 0, 1) : 0,
           latR: lv.x < -8 ? clamp(-lv.x / 240, 0, 1) : 0
         };
-      } else if (sp > 0.2 && !this.grounded) {
+      } else if (sp <= 8 && sp > 0.2 && !this.grounded) {
+        // parada fina: anular la última deriva
         this.vel.x *= Math.pow(0.05, dt);
         this.vel.y *= Math.pow(0.05, dt);
       }
@@ -342,25 +452,7 @@ class Ship {
       fx += dir.x * F; fy += dir.y * F;
       torque += tq * effT;
       this.throttleTotal += effT * (def.thrust > 3000 ? 1 : 0.3);
-
-      // pluma de escape + luz de tobera
-      const wdir = rotV(dir.x, dir.y, this.angle);
-      const big = def.thrust > 3000;
-      const ex = b.wx - wdir.x * CELL * 0.6, ey = b.wy - wdir.y * CELL * 0.6;
-      Lights.add(ex - wdir.x * 12, ey - wdir.y * 12,
-        (big ? 55 : 26) + 40 * effT, '110,231,255', 0.2 * effT);
-      const rate = dt * (big ? 110 : 45) * effT;
-      let nP = Math.floor(rate) + (Math.random() < rate % 1 ? 1 : 0);
-      while (nP-- > 0) {
-        Particles.spawn({
-          x: ex + rand(-3, 3), y: ey + rand(-3, 3),
-          vx: this.vel.x - wdir.x * rand(220, 400) + rand(-25, 25),
-          vy: this.vel.y - wdir.y * rand(220, 400) + rand(-25, 25),
-          life: rand(0.12, 0.4), size: rand(1.2, 2.8),
-          color: Math.random() < 0.75 ? '140,220,255' : '255,240,200',
-          drag: 0.92, glow: true
-        });
-      }
+      this.exhaustFX(b, effT, dt);
     }
 
     // giroscopios: par directo consumiendo electricidad
@@ -519,6 +611,27 @@ class Ship {
     });
     this.blocks.delete(keyOf(block.gx, block.gy));
 
+    // reacción secundaria según lo que era el bloque
+    if (this.world) {
+      const def = block.def;
+      if (def.fuelCap && block.fuel > 1) {
+        // tanque con combustible: bola de fuego que incendia lo cercano
+        const power = clamp(block.fuel / def.fuelCap, 0.25, 1);
+        Events.emit('explosion', { x: block.wx, y: block.wy, kind: 'fuel', power });
+        this.world.explode(block.wx, block.wy, 60 + 40 * power, 22 * power, 0.65);
+      } else if (def.powerGen && def.fuelBurn > 0) {
+        // reactor: detonación violenta con onda expansiva
+        Events.emit('explosion', { x: block.wx, y: block.wy, kind: 'reactor', power: 1 });
+        this.world.explode(block.wx, block.wy, 130, 48, 0.3);
+      } else if (def.powerCap && block.charge > 5) {
+        Events.emit('explosion', { x: block.wx, y: block.wy, kind: 'battery', power: 0.5 });
+        this.world.explode(block.wx, block.wy, 46, 12, 0.1);
+      }
+      // el bloque destruido se convierte en escombros físicos
+      this.world.spawnDebris(block, this, 2);
+    }
+
+    if (!this.alive) return;
     if (block.type === 'cabin' || this.blocks.size === 0) { this.destroy(); return; }
 
     this.recompute(false);
@@ -547,10 +660,8 @@ class Ship {
       if (seen.has(k)) continue;
       dropped = true;
       this.blocks.delete(k);
-      Particles.burst(b.wx, b.wy, 5, {
-        color: hexToRgb(b.def.color), spMax: 90, life: 2.2,
-        shape: 'shard', size: 3.5, drag: 0.985, vx: this.vel.x * 0.8, vy: this.vel.y * 0.8
-      });
+      // los trozos desconectados salen despedidos como escombros reales
+      if (this.world) this.world.spawnDebris(b, this, 1);
     }
     if (dropped) this.recompute(false);
   }
@@ -558,6 +669,12 @@ class Ship {
   destroy() {
     if (!this.alive) return;
     this.alive = false;
+    // la nave no se esfuma: su estructura se rompe en pedazos que derivan
+    if (this.world) {
+      for (const b of this.blockArr) {
+        if (b.type !== 'cabin') this.world.spawnDebris(b, this, 3);
+      }
+    }
     Events.emit('ship:destroyed', { x: this.pos.x, y: this.pos.y, ship: this });
   }
 
@@ -587,6 +704,30 @@ class Ship {
       ctx.restore();
     }
     ctx.restore();
+
+    // capa de fuego de reentrada: brillo por bloque en la cara de ataque
+    let anyHeat = false;
+    for (const b of this.blockArr) if (b.heat > 0.03) { anyHeat = true; break; }
+    if (anyHeat) {
+      const sp = Math.hypot(this.vel.x, this.vel.y) || 1;
+      const dx = this.vel.x / sp, dy = this.vel.y / sp;
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      for (const b of this.blockArr) {
+        if (b.heat <= 0.03) continue;
+        const hx = b.wx + dx * CELL * 0.42, hy = b.wy + dy * CELL * 0.42;
+        const r = CELL * (0.8 + b.heat * 0.9);
+        const g = ctx.createRadialGradient(hx, hy, 0, hx, hy, r);
+        // del naranja profundo al blanco incandescente según temperatura
+        const core = b.heat > 0.75 ? '255,240,210' : '255,190,110';
+        g.addColorStop(0, `rgba(${core},${0.5 * b.heat})`);
+        g.addColorStop(0.45, `rgba(255,130,50,${0.3 * b.heat})`);
+        g.addColorStop(1, 'rgba(255,80,30,0)');
+        ctx.fillStyle = g;
+        ctx.fillRect(hx - r, hy - r, r * 2, r * 2);
+      }
+      ctx.restore();
+    }
 
     // burbuja de escudo (en marco de mundo)
     const cap = this.shieldCap();
