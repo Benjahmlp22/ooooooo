@@ -1,0 +1,82 @@
+/* ODISEA // DERIVA — misma familia visual que ASTILLERO // ÓRBITA */
+:root{
+  --bg:#0b0e13; --panel:rgba(14,18,26,.94);
+  --line:rgba(180,205,230,.10); --line-hi:rgba(180,205,230,.25);
+  --ink:#c8d6e5; --ink-dim:#5c6b7d;
+  --accent:#6ee7ff; --o2:#8fd0ff; --pw:#a3e635; --fu:#ffb454;
+  --danger:#ff5d5d; --hp:#ff9db0;
+  --font:"SF Mono","JetBrains Mono","Cascadia Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden}
+body{background:var(--bg);color:var(--ink);font-family:var(--font);font-size:12px;user-select:none}
+#game{position:fixed;inset:0;display:block}
+#vignette{position:fixed;inset:0;pointer-events:none;z-index:5;
+  background:radial-gradient(ellipse at center,transparent 52%,rgba(0,0,0,.5) 100%)}
+
+/* pantallas */
+.screen{position:fixed;inset:0;z-index:40;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:18px;background:rgba(8,10,14,.88);
+  backdrop-filter:blur(4px);text-align:center;padding:24px}
+.screen.hidden{display:none}
+.screen h1{font-size:26px;letter-spacing:.5em;font-weight:400;text-shadow:0 0 30px rgba(110,231,255,.35)}
+.screen h1 span{color:var(--accent);margin:0 4px}
+.sub{font-size:10px;letter-spacing:.35em;color:var(--ink-dim)}
+.brief{max-width:520px;font-size:11px;line-height:1.9;color:var(--ink-dim);text-align:left}
+.brief p{margin-bottom:10px}
+.brief b{color:var(--ink);font-weight:400}
+.keys{font-size:10px;line-height:2;color:var(--ink-dim)}
+.keys b{color:var(--accent);font-weight:400}
+button{font-family:var(--font);font-size:12px;letter-spacing:.2em;color:var(--accent);
+  background:transparent;border:1px solid var(--accent);padding:12px 28px;cursor:pointer;
+  transition:background .15s}
+button:hover{background:rgba(110,231,255,.1)}
+
+/* HUD */
+#hud{position:fixed;inset:0;z-index:15;pointer-events:none;display:none}
+body.playing #hud{display:block}
+.hud-left{position:absolute;left:16px;bottom:16px;width:200px}
+.meter{margin-bottom:9px}
+.meter label{font-size:9px;letter-spacing:.25em;color:var(--ink-dim);display:block;margin-bottom:3px}
+.bar{height:3px;background:rgba(255,255,255,.07)}
+.fill{height:100%;width:100%;transition:width .15s linear}
+.fill.o2{background:var(--o2)} .fill.pw{background:var(--pw)}
+.fill.fu{background:var(--fu)} .fill.hu{background:var(--accent)}
+.fill.hp{background:var(--hp)}
+.hud-right{position:absolute;right:16px;bottom:16px;text-align:right}
+.readout{margin-bottom:8px}
+.readout label{font-size:9px;letter-spacing:.25em;color:var(--ink-dim);margin-right:8px}
+.readout span{font-size:14px}
+.readout.big span{font-size:20px;color:var(--accent)}
+.readout small{font-size:9px;color:var(--ink-dim);margin-left:3px}
+
+#alerts{position:absolute;top:56px;left:50%;transform:translateX(-50%);
+  text-align:center;font-size:10px;letter-spacing:.2em;line-height:2}
+#alerts .alert{color:var(--danger);animation:blink 1s steps(2) infinite}
+#alerts .warn{color:var(--fu)}
+@keyframes blink{50%{opacity:.25}}
+
+#hint{position:absolute;bottom:120px;left:50%;transform:translateX(-50%);
+  font-size:10px;letter-spacing:.18em;color:var(--accent);
+  background:var(--panel);border:1px solid var(--line);padding:7px 14px;
+  opacity:0;transition:opacity .2s}
+#hint.show{opacity:1}
+
+#banner{position:fixed;top:34%;left:0;right:0;z-index:30;text-align:center;
+  font-size:17px;letter-spacing:.45em;color:var(--ink);opacity:0;transition:opacity .4s;
+  pointer-events:none;text-shadow:0 0 24px rgba(110,231,255,.4)}
+#banner.show{opacity:1}
+#banner.danger{color:var(--danger);text-shadow:0 0 24px rgba(255,93,93,.4)}
+#banner small{display:block;font-size:10px;letter-spacing:.3em;color:var(--ink-dim);margin-top:10px}
+
+/* señal */
+.modal{position:fixed;top:20%;left:50%;transform:translateX(-50%);z-index:35;
+  background:var(--panel);border:1px solid var(--line-hi);padding:22px 34px;
+  text-align:center;display:none}
+.modal.show{display:block}
+.modal h3{font-size:11px;letter-spacing:.35em;font-weight:400;color:var(--accent);margin-bottom:6px}
+.modal .dim{font-size:9px;color:var(--ink-dim);letter-spacing:.15em;margin-bottom:14px}
+#sig-seq{font-size:24px;letter-spacing:.35em;min-height:34px;color:var(--ink)}
+#sig-seq .done{color:var(--pw)}
+#sig-seq .hiddenq{color:var(--ink-dim)}
+#sig-status{font-size:9px;letter-spacing:.25em;color:var(--ink-dim);margin-top:10px;min-height:14px}

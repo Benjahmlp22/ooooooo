@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ODISEA // DERIVA</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<canvas id="game"></canvas>
+<div id="vignette"></div>
+
+<!-- ======================= MENÚ ======================= -->
+<div id="menu" class="screen">
+  <h1>ODISEA<span>//</span>DERIVA</h1>
+  <p class="sub">bitácora de supervivencia a bordo</p>
+  <div class="brief">
+    <p>Eres el único tripulante del carguero ODISEA, a la deriva a
+    <b>100 000 km</b> de casa. El motor aún responde. Todo lo demás, ya veremos.</p>
+    <p>Gestiona <b>oxígeno</b>, <b>energía</b> y <b>combustible</b>. Repara fugas
+    e incendios. Descifra señales. Escapa de anomalías gravitatorias.
+    Suelta la carga si hace falta aligerar. <b>Vuelve a casa.</b></p>
+  </div>
+  <div class="keys">
+    <p><b>WASD</b> propulsarte (gravedad cero: derivas) · <b>E</b> usar consola</p>
+    <p><b>R</b> mantener: reparar / sofocar · <b>Espacio</b> en el timón: quemar motor</p>
+  </div>
+  <button id="btn-start">EMBARCAR ▶</button>
+</div>
+
+<!-- ======================= HUD ======================= -->
+<div id="hud">
+  <div class="hud-left">
+    <div class="meter"><label>OXÍGENO</label>
+      <div class="bar"><div id="bar-o2" class="fill o2"></div></div></div>
+    <div class="meter"><label>ENERGÍA</label>
+      <div class="bar"><div id="bar-pw" class="fill pw"></div></div></div>
+    <div class="meter"><label>COMBUSTIBLE</label>
+      <div class="bar"><div id="bar-fu" class="fill fu"></div></div></div>
+    <div class="meter"><label>CASCO</label>
+      <div class="bar"><div id="bar-hu" class="fill hu"></div></div></div>
+    <div class="meter"><label>PULSO</label>
+      <div class="bar"><div id="bar-hp" class="fill hp"></div></div></div>
+  </div>
+  <div class="hud-right">
+    <div class="readout big"><label>CASA</label><span id="txt-dist">100000</span><small>km</small></div>
+    <div class="readout"><label>MOTOR</label><span id="txt-eng">APAGADO</span></div>
+    <div class="readout"><label>REPUESTOS</label><span id="txt-parts">8</span></div>
+    <div class="readout"><label>CARGA</label><span id="txt-cargo">3</span><small>mód</small></div>
+    <div class="readout"><label>DÍA</label><span id="txt-day">1</span></div>
+  </div>
+  <div id="alerts"></div>
+  <div id="hint"></div>
+</div>
+
+<!-- descifrado de señal -->
+<div id="signal" class="modal">
+  <h3>SEÑAL ENTRANTE</h3>
+  <p class="dim">memoriza y repite la secuencia con las flechas</p>
+  <div id="sig-seq"></div>
+  <div id="sig-status"></div>
+</div>
+
+<div id="banner"></div>
+
+<!-- ======================= FIN ======================= -->
+<div id="end" class="screen hidden">
+  <h1 id="end-title">—</h1>
+  <p id="end-sub" class="sub"></p>
+  <div id="end-stats" class="brief"></div>
+  <button id="btn-again">OTRA TRAVESÍA ▶</button>
+</div>
+
+<script src="js/core.js"></script>    <!-- Observer + Singleton (audio) -->
+<script src="js/ship.js"></script>    <!-- la nave: mapa, sistemas, averías -->
+<script src="js/player.js"></script>  <!-- el tripulante -->
+<script src="js/events.js"></script>  <!-- Strategy: director de eventos -->
+<script src="js/render.js"></script>  <!-- dibujo + partículas (Object Pool) -->
+<script src="js/main.js"></script>    <!-- State: menú / juego / fin -->
+</body>
+</html>

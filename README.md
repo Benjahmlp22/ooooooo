@@ -1,5 +1,13 @@
 # ASTILLERO // ÓRBITA
 
+> En este repositorio viven dos juegos hermanos:
+> **ASTILLERO // ÓRBITA** (raíz, `index.html`) — construye naves y combate — y
+> **ODISEA // DERIVA** (`deriva/index.html`) — supervivencia a bordo de una
+> nave que no puedes editar: gestiona oxígeno, energía y combustible, sella
+> brechas, sofoca incendios, descifra señales, escapa de anomalías
+> gravitatorias y suelta carga para aligerar. Mismo estilo minimalista,
+> mismos patrones de diseño, cero dependencias.
+
 Juego técnico de construcción espacial en 2D. HTML + CSS + JavaScript puro,
 sin dependencias ni build: abre `index.html` en el navegador y juega.
 
