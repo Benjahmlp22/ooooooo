@@ -46,10 +46,17 @@ class HangarState extends GameState {
     const gw = (maxX - minX + 1), gh = (maxY - minY + 1);
     const s = Math.min((wpx - 16) / gw, (hpx - 16) / gh, 18);
     c.translate(wpx / 2 - (minX + maxX) / 2 * s, hpx / 2 - (minY + maxY) / 2 * s);
+    const occupied = new Set(bp.blocks.map(b => keyOf(b.x, b.y)));
     for (const b of bp.blocks) {
+      const edges = {
+        n: !occupied.has(keyOf(b.x, b.y - 1)),
+        e: !occupied.has(keyOf(b.x + 1, b.y)),
+        s: !occupied.has(keyOf(b.x, b.y + 1)),
+        w: !occupied.has(keyOf(b.x - 1, b.y))
+      };
       c.save();
       c.translate(b.x * s, b.y * s);
-      drawBlockType(c, b.t, b.r, s);
+      drawBlockType(c, b.t, b.r, s, edges);
       c.restore();
     }
     return cv;

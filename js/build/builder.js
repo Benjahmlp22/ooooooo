@@ -67,8 +67,9 @@ class Builder {
     const s = this.stats();
     if (s.thrust === 0)   warnings.push('Sin propulsores: la nave no podrá moverse.');
     if (s.fuelCap === 0 && s.thrust > 0) warnings.push('Sin tanques: los propulsores no tendrán combustible.');
-    if (s.lasers > 0 && s.powerCap === 0) warnings.push('Láseres sin reserva de energía.');
-    if (s.lasers > 0 && s.powerGen === 0) warnings.push('Sin reactor: los láseres agotarán las baterías.');
+    if (s.weapons > 0 && s.powerCap === 0) warnings.push('Armas sin reserva de energía.');
+    if (s.weapons > 0 && s.powerGen === 0) warnings.push('Sin generación: las armas agotarán las baterías.');
+    if (s.shield > 0 && s.powerGen === 0) warnings.push('El escudo no se recargará sin generación de energía.');
     if (s.torque === 0 && s.thrust > 0) warnings.push('Sin giroscopio ni RCS descentrados: girar será difícil.');
 
     return { ok: errors.length === 0, errors, warnings, orphans };
@@ -78,7 +79,7 @@ class Builder {
 
   stats() {
     let mass = 0, thrust = 0, fuelCap = 0, powerCap = 0, powerGen = 0,
-        fuelUse = 0, torque = 0, lasers = 0, hp = 0;
+        fuelUse = 0, torque = 0, weapons = 0, hp = 0, shield = 0, legs = 0;
     for (const c of this.grid.values()) {
       const d = BLOCK_DEFS[c.t];
       mass += d.mass; hp += d.hp;
@@ -88,11 +89,13 @@ class Builder {
       if (d.powerGen) powerGen += d.powerGen;
       if (d.fuelUse) fuelUse += d.fuelUse;
       if (d.torque) torque += d.torque;
-      if (d.laser) lasers++;
+      if (d.laser || d.cannon) weapons++;
+      if (d.shieldCap) shield += d.shieldCap;
+      if (d.landing) legs++;
     }
     return {
       blocks: this.grid.size, mass, hp, thrust, fuelCap, powerCap, powerGen,
-      fuelUse, torque, lasers,
+      fuelUse, torque, weapons, shield, legs,
       accel: mass > 0 ? thrust / mass : 0
     };
   }

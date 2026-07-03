@@ -104,6 +104,17 @@ const Game = {
       const muted = SFX.toggleMute();
       UI.toast(muted ? 'SONIDO DESACTIVADO' : 'SONIDO ACTIVADO');
     });
+
+    // modo de vuelo ASISTIDO / REALISTA (persistente; G en vuelo)
+    const btnAssist = document.getElementById('btn-assist');
+    const syncAssist = () => { btnAssist.textContent = Settings.assist ? 'ASISTIDO' : 'REALISTA'; };
+    syncAssist();
+    btnAssist.addEventListener('click', () => {
+      Events.emit('ui:click');
+      const v = Settings.toggleAssist();
+      UI.toast('MODO DE VUELO: ' + (v ? 'ASISTIDO' : 'REALISTA'));
+    });
+    Events.on('settings:assist', syncAssist);
   },
 
   loop(t) {

@@ -19,7 +19,9 @@ const DEFAULT_BP = {
     { t: 'battery',  x: 1,  y:  0, r: 0 },
     { t: 'thruster', x: -1, y: 1, r: 0 },
     { t: 'gyro',     x: 0,  y:  1, r: 0 },
-    { t: 'thruster', x: 1,  y:  1, r: 0 }
+    { t: 'thruster', x: 1,  y:  1, r: 0 },
+    { t: 'leg',      x: -2, y:  1, r: 0 },
+    { t: 'leg',      x: 2,  y:  1, r: 0 }
   ]
 };
 
@@ -56,26 +58,37 @@ class BuildState extends GameState {
     this.domReady = true;
 
     const list = document.getElementById('palette-list');
-    for (const type of BlockFactory.types) {
-      const def = BLOCK_DEFS[type];
-      const el = document.createElement('div');
-      el.className = 'pal-item';
-      el.dataset.type = type;
-      const cv = document.createElement('canvas');
-      cv.width = cv.height = 40;
-      const c = cv.getContext('2d');
-      c.translate(20, 20);
-      drawBlockType(c, type, 0, 34);
-      el.appendChild(cv);
-      const label = document.createElement('span');
-      label.textContent = def.name;
-      el.appendChild(label);
-      const kbd = document.createElement('kbd');
-      kbd.textContent = def.hotkey;
-      el.appendChild(kbd);
-      el.addEventListener('click', () => { this.select(type); Events.emit('ui:click'); });
-      el.addEventListener('mouseenter', () => this.showInfo(type));
-      list.appendChild(el);
+    for (const cat of BLOCK_CATS) {
+      const types = BlockFactory.types.filter(t => BLOCK_DEFS[t].cat === cat);
+      if (types.length === 0) continue;
+      const head = document.createElement('h4');
+      head.className = 'pal-cat';
+      head.textContent = cat;
+      list.appendChild(head);
+      const grid = document.createElement('div');
+      grid.className = 'pal-grid';
+      for (const type of types) {
+        const def = BLOCK_DEFS[type];
+        const el = document.createElement('div');
+        el.className = 'pal-item';
+        el.dataset.type = type;
+        const cv = document.createElement('canvas');
+        cv.width = cv.height = 40;
+        const c = cv.getContext('2d');
+        c.translate(20, 20);
+        drawBlockType(c, type, 0, 34);
+        el.appendChild(cv);
+        const label = document.createElement('span');
+        label.textContent = def.name;
+        el.appendChild(label);
+        const kbd = document.createElement('kbd');
+        kbd.textContent = def.hotkey;
+        el.appendChild(kbd);
+        el.addEventListener('click', () => { this.select(type); Events.emit('ui:click'); });
+        el.addEventListener('mouseenter', () => this.showInfo(type));
+        grid.appendChild(el);
+      }
+      list.appendChild(grid);
     }
 
     const nameInput = document.getElementById('ship-name');
@@ -119,6 +132,9 @@ class BuildState extends GameState {
     if (d.torque)   st.push(`par <b>${d.torque}</b>`);
     if (d.resist)   st.push(`absorbe <b>${Math.round(d.resist * 100)}%</b>`);
     if (d.laser)    st.push(`daño <b>${d.laser.dmg}</b> · alcance <b>${d.laser.range}</b>`);
+    if (d.cannon)   st.push(`daño <b>${d.cannon.dmg}</b> · proyectil <b>${d.cannon.speed} m/s</b>`);
+    if (d.shieldCap) st.push(`escudo <b>${d.shieldCap} PV</b> · regen <b>${d.shieldRegen}/s</b>`);
+    if (d.landing)  st.push(`aterrizaje seguro <b>×3</b>`);
     document.getElementById('block-info').innerHTML =
       rows.join('<br>') + st.join(' · ');
   }
@@ -139,7 +155,9 @@ class BuildState extends GameState {
       fmt('ENERGÍA', s.powerCap + ' u') +
       fmt('GENERACIÓN', s.powerGen + ' u/s') +
       fmt('PAR GIRO', s.torque) +
-      fmt('LÁSERES', s.lasers);
+      fmt('ARMAS', s.weapons) +
+      fmt('ESCUDO', s.shield + ' PV') +
+      fmt('TREN', s.legs);
 
     let html = '';
     for (const e of v.errors)   html += `<div class="err">✕ ${e}</div>`;
@@ -231,10 +249,11 @@ class BuildState extends GameState {
       if (e.code === 'KeyY') { e.preventDefault(); this.builder.redo(); }
       return;
     }
-    // selección rápida por tecla
+    // selección rápida por tecla (dígitos y letras)
+    const key = e.key.length === 1 ? e.key.toUpperCase() : e.key;
     for (const type of BlockFactory.types) {
       const hk = BLOCK_DEFS[type].hotkey;
-      if (e.key === hk) { this.select(type); break; }
+      if (key === hk) { this.select(type); break; }
     }
   }
 
@@ -281,12 +300,18 @@ class BuildState extends GameState {
     ctx.textAlign = 'center';
     ctx.fillText('▲ PROA', 0, (y0 + 0.7) * CELL);
 
-    // bloques del plano
+    // bloques del plano (contorno solo en bordes expuestos: sin costuras)
     for (const [k, c] of this.builder.grid) {
       const [gx, gy] = k.split(',').map(Number);
+      const edges = {
+        n: !this.builder.grid.has(keyOf(gx, gy - 1)),
+        e: !this.builder.grid.has(keyOf(gx + 1, gy)),
+        s: !this.builder.grid.has(keyOf(gx, gy + 1)),
+        w: !this.builder.grid.has(keyOf(gx - 1, gy))
+      };
       ctx.save();
       ctx.translate(gx * CELL, gy * CELL);
-      drawBlockType(ctx, c.t, c.r, CELL);
+      drawBlockType(ctx, c.t, c.r, CELL, edges);
       ctx.restore();
       if (this.orphans && this.orphans.has(k)) {
         ctx.strokeStyle = 'rgba(255,93,93,0.7)';

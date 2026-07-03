@@ -4,6 +4,11 @@
    Cada nave enemiga recibe una estrategia intercambiable que
    solo escribe en ship.intents: la IA vuela con exactamente la
    misma física, combustible y propulsores que el jugador.
+
+   Pilotaje: control por VELOCIDAD DESEADA — la estrategia decide
+   qué vector de velocidad quiere (interceptar, orbitar, huir,
+   separarse de aliados, esquivar planetas) y el piloto lo
+   convierte en intenciones proporcionales de empuje y giro.
    ============================================================ */
 'use strict';
 
@@ -11,42 +16,84 @@ class AIStrategy {
   constructor(opts = {}) {
     this.engageRange = opts.engageRange || 460;
     this.fireArc     = opts.fireArc || 0.13;
-    this.jitter      = rand(0, TAU);   // desincroniza los enjambres
+    this.fireRange   = opts.fireRange || 840;
+    this.projSpeed   = opts.projSpeed || 0;    // >0: apuntado para cañones
   }
 
   update(ship, world, dt) { /* abstracto */ }
-
-  /* orientar la nave hacia un punto: devuelve el error angular */
-  steerTo(ship, tx, ty) {
-    const fwd = rotV(0, -1, ship.angle);
-    const cur = Math.atan2(fwd.y, fwd.x);
-    const want = Math.atan2(ty - ship.pos.y, tx - ship.pos.x);
-    let err = angDiff(cur, want);
-    // anticipación: frenar el giro antes de pasarse
-    const eff = err - ship.angVel * 0.4;
-    ship.intents.turnR = eff >  0.06 ? 1 : 0;
-    ship.intents.turnL = eff < -0.06 ? 1 : 0;
-    return err;
-  }
-
-  /* punto de intercepción simple según la velocidad relativa */
-  leadPoint(ship, target) {
-    const dx = target.pos.x - ship.pos.x, dy = target.pos.y - ship.pos.y;
-    const t = clamp(Math.hypot(dx, dy) / 900, 0, 1.1);
-    return {
-      x: target.pos.x + (target.vel.x - ship.vel.x) * t,
-      y: target.pos.y + (target.vel.y - ship.vel.y) * t
-    };
-  }
 
   resetIntents(ship) {
     const it = ship.intents;
     it.fwd = it.back = it.latL = it.latR = it.turnL = it.turnR = 0;
     it.fire = false;
   }
+
+  /* orientación proporcional con anticipación: devuelve el error angular */
+  steerTo(ship, tx, ty) {
+    const fwd = rotV(0, -1, ship.angle);
+    const cur = Math.atan2(fwd.y, fwd.x);
+    const want = Math.atan2(ty - ship.pos.y, tx - ship.pos.x);
+    const err = angDiff(cur, want);
+    const eff = err - ship.angVel * 0.45;        // frenar antes de pasarse
+    ship.intents.turnR = eff > 0 ? clamp(eff * 2.4, 0, 1) : 0;
+    ship.intents.turnL = eff < 0 ? clamp(-eff * 2.4, 0, 1) : 0;
+    return err;
+  }
+
+  /* punto de intercepción según velocidad relativa (y del proyectil) */
+  leadPoint(ship, target) {
+    const dx = target.pos.x - ship.pos.x, dy = target.pos.y - ship.pos.y;
+    const closing = this.projSpeed > 0 ? this.projSpeed : 900;
+    const t = clamp(Math.hypot(dx, dy) / closing, 0, 1.2);
+    return {
+      x: target.pos.x + (target.vel.x - ship.vel.x) * t,
+      y: target.pos.y + (target.vel.y - ship.vel.y) * t
+    };
+  }
+
+  /* convierte una velocidad deseada en intenciones de traslación */
+  flyTowardsVelocity(ship, dvx, dvy) {
+    const loc = rotV(dvx - ship.vel.x, dvy - ship.vel.y, -ship.angle);
+    const K = 1 / 150;
+    const it = ship.intents;
+    it.fwd  = loc.y < 0 ? clamp(-loc.y * K, 0, 1) : 0;
+    it.back = loc.y > 0 ? clamp( loc.y * K, 0, 1) : 0;
+    it.latL = loc.x < 0 ? clamp(-loc.x * K, 0, 1) : 0;
+    it.latR = loc.x > 0 ? clamp( loc.x * K, 0, 1) : 0;
+  }
+
+  /* componentes comunes: separación de aliados + evitar planetas */
+  avoidance(ship, world) {
+    let ax = 0, ay = 0;
+    for (const o of world.ships) {
+      if (o === ship || !o.alive || o.faction !== ship.faction) continue;
+      const dx = ship.pos.x - o.pos.x, dy = ship.pos.y - o.pos.y;
+      const d = Math.hypot(dx, dy);
+      const min = ship.radius + o.radius + 90;
+      if (d > 0.1 && d < min) {
+        const f = (min - d) / min * 260;
+        ax += dx / d * f; ay += dy / d * f;
+      }
+    }
+    for (const pl of world.planets) {
+      const dx = ship.pos.x - pl.x, dy = ship.pos.y - pl.y;
+      const d = Math.hypot(dx, dy) || 1;
+      const danger = pl.r + pl.atmo + 520;
+      if (d < danger) {
+        // subir: cuanto más hondo, más urgencia (vence a la gravedad)
+        const f = (1 - (d - pl.r) / (danger - pl.r)) * 620 + 160;
+        ax += dx / d * f; ay += dy / d * f;
+      }
+    }
+    return { ax, ay };
+  }
+
+  tryFire(ship, err, dist) {
+    ship.intents.fire = Math.abs(err) < this.fireArc && dist < this.fireRange;
+  }
 }
 
-/* --- CAZADOR: persigue, se detiene a distancia de tiro y dispara --- */
+/* --- CAZADOR: intercepta, iguala velocidad a distancia de tiro --- */
 class HunterStrategy extends AIStrategy {
   update(ship, world, dt) {
     this.resetIntents(ship);
@@ -54,20 +101,30 @@ class HunterStrategy extends AIStrategy {
     if (!target || !target.alive) return;
 
     const aim = this.leadPoint(ship, target);
-    const err = Math.abs(this.steerTo(ship, aim.x, aim.y));
-    const dist = Math.hypot(target.pos.x - ship.pos.x, target.pos.y - ship.pos.y);
+    const err = this.steerTo(ship, aim.x, aim.y);
 
-    // control de velocidad relativa para no embestir
-    const rel = rotV(ship.vel.x - target.vel.x, ship.vel.y - target.vel.y, -ship.angle);
-    if (err < 0.55) {
-      if (dist > this.engageRange && rel.y > -260) ship.intents.fwd = 1;
-      else if (dist < this.engageRange * 0.55 || rel.y < -300) ship.intents.back = 1;
+    const dx = target.pos.x - ship.pos.x, dy = target.pos.y - ship.pos.y;
+    const dist = Math.hypot(dx, dy) || 1;
+    const tx = dx / dist, ty = dy / dist;
+    const av = this.avoidance(ship, world);
+
+    let dvx, dvy;
+    if (ship.integrity() < 0.35) {
+      // malherido: huir manteniendo fuego de cobertura
+      dvx = target.vel.x - tx * 430 + av.ax;
+      dvy = target.vel.y - ty * 430 + av.ay;
+    } else {
+      // acercarse hasta la distancia de combate e igualar velocidad
+      const speedGoal = clamp((dist - this.engageRange) * 1.5, -240, 500);
+      dvx = target.vel.x + tx * speedGoal + av.ax;
+      dvy = target.vel.y + ty * speedGoal + av.ay;
     }
-    ship.intents.fire = err < this.fireArc && dist < 880;
+    this.flyTowardsVelocity(ship, dvx, dvy);
+    this.tryFire(ship, err, dist);
   }
 }
 
-/* --- ORBITADOR: mantiene distancia y rodea al objetivo disparando --- */
+/* --- ORBITADOR: rodea al objetivo a distancia fija disparando --- */
 class OrbitStrategy extends AIStrategy {
   constructor(opts = {}) {
     super(opts);
@@ -81,18 +138,26 @@ class OrbitStrategy extends AIStrategy {
     if (!target || !target.alive) return;
 
     const aim = this.leadPoint(ship, target);
-    const err = Math.abs(this.steerTo(ship, aim.x, aim.y));
-    const dist = Math.hypot(target.pos.x - ship.pos.x, target.pos.y - ship.pos.y);
+    const err = this.steerTo(ship, aim.x, aim.y);
 
-    if (err < 0.7) {
-      if (dist > this.orbitDist * 1.25) ship.intents.fwd = 1;
-      else if (dist < this.orbitDist * 0.7) ship.intents.back = 1;
-      else {
-        // desplazamiento lateral: órbita
-        if (this.dir > 0) ship.intents.latR = 1; else ship.intents.latL = 1;
-      }
+    const dx = target.pos.x - ship.pos.x, dy = target.pos.y - ship.pos.y;
+    const dist = Math.hypot(dx, dy) || 1;
+    const tx = dx / dist, ty = dy / dist;
+    const av = this.avoidance(ship, world);
+
+    let dvx, dvy;
+    if (ship.integrity() < 0.3) {
+      dvx = target.vel.x - tx * 430 + av.ax;
+      dvy = target.vel.y - ty * 430 + av.ay;
+    } else {
+      // radial: corregir hacia la órbita; tangencial: rodear
+      const radial = clamp((dist - this.orbitDist) * 1.6, -260, 420);
+      const tang = 215 * this.dir;
+      dvx = target.vel.x + tx * radial + (-ty) * tang + av.ax;
+      dvy = target.vel.y + ty * radial + ( tx) * tang + av.ay;
     }
-    ship.intents.fire = err < this.fireArc && dist < 880;
+    this.flyTowardsVelocity(ship, dvx, dvy);
+    this.tryFire(ship, err, dist);
   }
 }
 
@@ -145,7 +210,27 @@ const ENEMY_DESIGNS = {
       { t: 'battery',  x: 1,  y:  1, r: 0 },
       { t: 'thruster', x: -1, y: 2, r: 0 },
       { t: 'armor',    x: 0,  y:  2, r: 0 },
-      { t: 'thruster', x: 1,  y:  2, r: 0 }
+      { t: 'thruster', x: 1,  y: 2, r: 0 }
+    ]
+  },
+  gunship: {
+    name: 'CAÑONERA',
+    blocks: [
+      { t: 'cannon',   x: 0,  y: -2, r: 0 },
+      { t: 'armor',    x: -1, y: -1, r: 0 },
+      { t: 'cabin',    x: 0,  y: -1, r: 0 },
+      { t: 'armor',    x: 1,  y: -1, r: 0 },
+      { t: 'rcs',      x: -2, y:  0, r: 3 },
+      { t: 'tank',     x: -1, y:  0, r: 0 },
+      { t: 'reactor',  x: 0,  y:  0, r: 0 },
+      { t: 'tank',     x: 1,  y:  0, r: 0 },
+      { t: 'rcs',      x: 2,  y:  0, r: 1 },
+      { t: 'battery',  x: -1, y:  1, r: 0 },
+      { t: 'shield',   x: 0,  y:  1, r: 0 },
+      { t: 'gyro',     x: 1,  y:  1, r: 0 },
+      { t: 'thruster', x: -1, y: 2, r: 0 },
+      { t: 'battery',  x: 0,  y:  2, r: 0 },
+      { t: 'thruster', x: 1,  y: 2, r: 0 }
     ]
   }
 };
@@ -163,12 +248,17 @@ function pickWaveDesigns(n) {
     add('drone', HunterStrategy, { engageRange: 300 });
     add('interceptor', HunterStrategy);
     add('interceptor', OrbitStrategy);
+  } else if (n === 3) {
+    add('interceptor', HunterStrategy);
+    add('interceptor', OrbitStrategy);
+    add('corvette', OrbitStrategy, { orbitDist: 380 });
   } else {
     const count = Math.min(2 + n, 7);
     for (let i = 0; i < count; i++) {
       const roll = Math.random();
-      if (roll < 0.3) add('drone', HunterStrategy, { engageRange: rand(260, 360) });
-      else if (roll < 0.55 + (n > 4 ? -0.15 : 0)) add('interceptor', Math.random() < 0.5 ? HunterStrategy : OrbitStrategy);
+      if (roll < 0.25) add('drone', HunterStrategy, { engageRange: rand(260, 360) });
+      else if (roll < 0.5) add('interceptor', Math.random() < 0.5 ? HunterStrategy : OrbitStrategy);
+      else if (roll < 0.75) add('gunship', HunterStrategy, { engageRange: 540, fireArc: 0.09, projSpeed: 820, fireRange: 760 });
       else add('corvette', OrbitStrategy, { orbitDist: rand(330, 430) });
     }
   }

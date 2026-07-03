@@ -12,40 +12,63 @@ oleadas de naves hostiles te obligan a comprobar si tu diseño era tan bueno
 como parecía.
 
 ### Construcción
-- Grilla libre con **10 tipos de bloque**: cabina, casco, blindaje, tanque,
-  batería, reactor, propulsor, RCS, giroscopio y láser.
+- Grilla libre con **15 tipos de bloque en 6 categorías** (mando, estructura,
+  propulsión, energía, armas, defensa): cabina, giroscopio, casco, blindaje,
+  tren de aterrizaje, propulsor, motor pesado, RCS, tanque, batería, reactor,
+  panel solar, láser, cañón y generador de escudo.
 - Todo bloque direccional es **girable** (`R`): los propulsores empujan hacia
-  donde apuntan, los láseres disparan hacia donde apuntan.
+  donde apuntan, las armas disparan hacia donde apuntan, el tren se orienta.
+- Renderizado **sin costuras**: los bloques contiguos se funden en un casco
+  unificado (contorno solo en los bordes expuestos).
 - Deshacer/rehacer (`Ctrl+Z` / `Ctrl+Y`), zoom, pan, borrador automático.
 - Validación en vivo: cabina única, conectividad (los bloques sueltos se
   marcan en rojo), avisos de ingeniería y **centro de masa visible** —
   un diseño asimétrico girará al acelerar.
 
 ### Vuelo
-- Sin gravedad: cada propulsor aplica su fuerza **en su posición real**, con
-  el par resultante sobre el centro de masa. La activación por tecla decide
-  qué propulsores encienden según su orientación y su brazo de palanca.
+- Física newtoniana: cada propulsor aplica su fuerza **en su posición real**,
+  con el par resultante sobre el centro de masa. La activación por tecla
+  decide qué propulsores encienden según su orientación y brazo de palanca.
+- Dos modos conmutables (`G`): **ASISTIDO** (amortiguación automática de giro
+  y deriva, vuelo accesible) y **REALISTA** (newtoniano puro, solo SAS).
 - **SAS** (`T`) amortigua la rotación con giroscopios y RCS; `X` frena el giro.
-- **Hitboxes exactas por bloque**: los láseres se resuelven por raycast contra
-  la caja de cada bloque; las colisiones nave-nave se resuelven por pares de
-  bloques con impulsos físicos.
-- **Recursos**: los propulsores queman combustible, los láseres y giroscopios
-  consumen electricidad, los reactores convierten combustible en energía.
-- **Averías**: un tanque dañado tiene fugas que vacían el depósito *y empujan
-  la nave*; una batería dañada produce cortocircuitos; un reactor dañado
-  rinde la mitad y humea. Perder un bloque estructural desprende todo lo que
-  quede desconectado de la cabina.
-- Daño por bloque: perder la cabina es perder la nave.
+- **Hitboxes exactas por bloque**: láseres por raycast contra la caja de cada
+  bloque; **proyectiles de cañón** físicos con retroceso, gravedad e impulso
+  de impacto; colisiones nave-nave por pares de bloques con impulsos.
+- **Escudos**: burbuja que absorbe láseres y proyectiles, se recarga con
+  energía tras 2.5 s sin recibir daño.
+- **Recursos**: propulsores queman combustible; armas, giroscopios y escudos
+  consumen electricidad; reactores y paneles solares la generan.
+- **Averías y reparación**: tanques con fugas que vacían el depósito *y
+  empujan la nave*, baterías en cortocircuito, reactores humeantes. Mantén
+  `R` para **soldar en vuelo** el bloque más dañado (consume energía); al
+  superar el 50% de casco la fuga queda sellada.
+- Daño por bloque: perder la cabina es perder la nave; lo desconectado se
+  desprende como escombros.
+
+### Planetas
+Dos cuerpos a gran escala: **VERDANIA** (gravedad terrestre, atmósfera con
+arrastre, cielo, árboles, arbustos, hierba y rocas) y la luna **CENIZA**
+(baja gravedad, sin aire, rocas y cráteres). Gravedad newtoniana g·(R/r)²,
+**calentamiento de reentrada** con plasma, viento audible, y aterrizaje con
+contacto físico por bloque — el tren de aterrizaje triplica la velocidad de
+contacto segura.
 
 ### Enemigos
 Las naves hostiles usan exactamente la misma física, bloques, combustible y
-electricidad que el jugador. Tres diseños (dron, interceptor, corbeta) con
-estrategias de combate intercambiables (cazador, orbitador).
+electricidad que el jugador. Cuatro diseños (dron, interceptor, corbeta,
+cañonera con escudo) con estrategias intercambiables (cazador, orbitador)
+que pilotan por **igualación de velocidad**: interceptan con punto de
+adelanto, mantienen distancia de tiro, orbitan, se separan entre sí,
+esquivan planetas y se retiran si están malheridos.
 
 ### Estética
 Minimalista y cinematográfica: vectores finos monocromos con acentos de
-color funcional, parallax de estrellas en 3 capas, estelas de velocidad,
-zoom dinámico con la velocidad, sacudida de cámara y sonido 100% procedural
+color funcional, casco sin costuras, parallax de estrellas en 3 capas,
+**pasada de luces aditivas** (toberas, láseres, explosiones, escudos, plasma),
+estelas de velocidad, zoom dinámico, **cámara con fuerzas G** (se desplaza
+contra la aceleración sentida y se inclina con la fuerza centrífuga, con
+lector de G en el HUD) y sonido 100% procedural con compresor maestro
 (WebAudio, sin assets).
 
 ### Hangar
@@ -64,8 +87,10 @@ Guarda tus naves, publícalas con firma de constructor y compártelas mediante
 | Vuelo | `W`/`S` | empuje adelante / atrás |
 | Vuelo | `A`/`D` | girar |
 | Vuelo | `Q`/`E` | desplazamiento lateral |
-| Vuelo | `Espacio` | disparar láseres |
+| Vuelo | `Espacio` | disparar (láseres y cañones) |
+| Vuelo | `R` | reparar / soldar fugas |
 | Vuelo | `T` / `X` | SAS / frenar giro |
+| Vuelo | `G` | modo ASISTIDO ⇄ REALISTA |
 | Vuelo | `Esc` | volver al astillero |
 | Global | `M` | silenciar |
 
@@ -84,11 +109,13 @@ js/
 │                        + fábrica de instancias vivas
 ├── fx/
 │   ├── starfield.js     parallax de estrellas y nebulosas
-│   └── particles.js     OBJECT POOL — partículas sin asignación en caliente
+│   ├── particles.js     OBJECT POOL — partículas sin asignación en caliente
+│   └── lights.js        pasada de luces aditivas (pseudo-shader 2D)
 ├── sim/
+│   ├── planets.js       gravedad, atmósfera, superficie procedural
 │   ├── ship.js          cuerpo rígido compuesto: masa, inercia, propulsión,
-│   │                    recursos, fugas, raycast por bloque, daño
-│   └── world.js         colisiones por impulsos, oleadas, raycast global
+│   │                    recursos, fugas, escudos, reparación, daño
+│   └── world.js         colisiones, suelo planetario, proyectiles, oleadas
 ├── ai/
 │   └── ai.js            STRATEGY — comportamientos de IA intercambiables
 ├── build/

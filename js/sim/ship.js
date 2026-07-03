@@ -2,12 +2,14 @@
    Nave = cuerpo rígido compuesto por bloques en grilla
    ------------------------------------------------------------
    - Masa, centro de masa e inercia recalculados al cambiar.
-   - Cada bloque conserva su hitbox exacta (AABB en el marco
-     local de la nave) para raycasts y colisiones precisas.
+   - Hitbox exacta por bloque (AABB en marco local) para
+     raycasts, proyectiles y colisiones.
    - Propulsores: fuerza aplicada en su posición → par realista.
    - Sistemas: combustible, electricidad, reactores, fugas,
-     cortocircuitos, láseres con recarga.
-   - Sin gravedad: integración newtoniana pura.
+     cortocircuitos, escudos, armas y REPARACIÓN en vuelo.
+   - Modo ASISTIDO (jugador): amortiguación de giro y deriva.
+   - Registra la aceleración "sentida" (sin gravedad) para los
+     efectos de cámara por fuerza G.
    ============================================================ */
 'use strict';
 
@@ -25,8 +27,12 @@ class Ship {
     this.sas    = true;
     this.leaking = false;
     this.shorting = false;
+    this.reentry = false;
+    this.grounded = false;
+    this.repairingBlock = null;
+    this.felt = { x: 0, y: 0 };          // aceleración sentida (efectos G)
 
-    this.intents = { fwd:0, back:0, latL:0, latR:0, turnL:0, turnR:0, fire:false, killRot:false };
+    this.intents = { fwd:0, back:0, latL:0, latR:0, turnL:0, turnR:0, fire:false, killRot:false, repair:false };
 
     this.blocks = new Map();
     for (const b of blueprint.blocks) {
@@ -37,6 +43,10 @@ class Ship {
     this.comx = 0; this.comy = 0;
     this.recompute(true);
     this.initialHpTotal = this.hpTotal();
+    this.shield = this.shieldCap();
+    this.shieldDelay = 0;
+    this.shieldFlash = 0;
+    this.shieldHitAngle = 0;
     this.updateWorldPositions();
   }
 
@@ -72,6 +82,7 @@ class Ship {
     }
     this.inertia = Math.max(I, 200);
     this.radius = Math.sqrt(maxR2) + CELL;
+    if (this.shield !== undefined) this.shield = Math.min(this.shield, this.shieldCap());
   }
 
   updateWorldPositions() {
@@ -90,6 +101,10 @@ class Ship {
   powerCap()   { let t = 0; for (const b of this.blockArr) if (b.def.powerCap) t += b.def.powerCap; return t; }
   hpTotal()    { let t = 0; for (const b of this.blockArr) t += b.hp; return t; }
   integrity()  { return this.initialHpTotal ? this.hpTotal() / this.initialHpTotal : 0; }
+
+  shieldCap()  { let t = 0; for (const b of this.blockArr) if (b.def.shieldCap) t += b.def.shieldCap; return t; }
+  shieldR()    { return this.radius + 14; }
+  shieldActive() { return this.shield > 0.5; }
 
   drawFuel(amount) {
     const total = this.totalFuel();
@@ -124,18 +139,20 @@ class Ship {
 
   update(dt, world) {
     if (!this.alive) return;
+    this.felt.x = 0; this.felt.y = 0;
     this.updateWorldPositions();
     if (this.ai) this.ai.update(this, world, dt);
     this.systems(dt);
+    if (this.intents.repair) this.doRepair(dt); else this.repairingBlock = null;
     this.control(dt);
-    if (this.intents.fire) this.fireLasers(world);
+    if (this.intents.fire) this.fireWeapons(world);
 
     this.pos.x += this.vel.x * dt;
     this.pos.y += this.vel.y * dt;
     this.angle += this.angVel * dt;
   }
 
-  /* sistemas de a bordo: reactores, fugas, cortos, recargas */
+  /* sistemas de a bordo: reactores, fugas, cortos, escudos, recargas */
   systems(dt) {
     this.leaking = false;
     this.shorting = false;
@@ -144,42 +161,42 @@ class Ship {
       const def = b.def;
       if (b.cooldown > 0) b.cooldown -= dt;
 
-      // reactor: combustible → electricidad
+      // generación: reactor (quema combustible) o panel solar (gratis)
       if (def.powerGen) {
         const damaged = b.hp < def.hp * 0.5;
         const eff = damaged ? 0.5 : 1;
-        const burn = def.fuelBurn * eff * dt;
-        const got = this.drawFuel(burn);
-        if (got > 0) this.addPower(def.powerGen * eff * dt * (got / burn));
-        if (damaged && Math.random() < dt * 6) {
-          Particles.spawn({
-            x: b.wx + rand(-4, 4), y: b.wy + rand(-4, 4),
-            vx: this.vel.x * 0.6 + rand(-12, 12), vy: this.vel.y * 0.6 + rand(-12, 12),
-            life: rand(0.8, 1.6), size: rand(2, 4), color: '120,128,138',
-            drag: 0.96, grow: 3
-          });
+        if (def.fuelBurn > 0) {
+          const burn = def.fuelBurn * eff * dt;
+          const got = this.drawFuel(burn);
+          if (got > 0) this.addPower(def.powerGen * eff * dt * (got / burn));
+          if (damaged && Math.random() < dt * 6) this.smoke(b);
+        } else {
+          this.addPower(def.powerGen * eff * dt);
         }
       }
 
-      // fuga de combustible: tanque dañado pierde gas que además empuja
-      if (def.fuelCap && b.fuel > 0 && b.hp < def.hp * 0.5) {
-        this.leaking = true;
-        if (!b.leakDir) {
-          b.leakDir = rand(0, TAU);
-          Events.emit('leak:start', { ship: this });
-        }
-        b.fuel = Math.max(0, b.fuel - 3.0 * dt);
-        const dir = rotV(Math.cos(b.leakDir), Math.sin(b.leakDir), this.angle);
-        // reacción: el gas expulsado empuja la nave al lado contrario
-        this.applyForce(-dir.x * 240, -dir.y * 240, b.wx, b.wy, dt);
-        if (Math.random() < dt * 60) {
-          Particles.spawn({
-            x: b.wx + dir.x * CELL * 0.4, y: b.wy + dir.y * CELL * 0.4,
-            vx: this.vel.x + dir.x * rand(60, 140) + rand(-15, 15),
-            vy: this.vel.y + dir.y * rand(60, 140) + rand(-15, 15),
-            life: rand(0.4, 0.9), size: rand(1.5, 3), color: '255,180,84',
-            drag: 0.94, glow: true
-          });
+      // fuga de combustible: tanque dañado pierde gas que además empuja.
+      // Se sella al reparar el bloque por encima del 50%.
+      if (def.fuelCap) {
+        if (b.leakDir !== null && b.hp >= def.hp * 0.5) b.leakDir = null;
+        if (b.fuel > 0 && b.hp < def.hp * 0.5) {
+          this.leaking = true;
+          if (b.leakDir === null) {
+            b.leakDir = rand(0, TAU);
+            Events.emit('leak:start', { ship: this });
+          }
+          b.fuel = Math.max(0, b.fuel - 3.0 * dt);
+          const dir = rotV(Math.cos(b.leakDir), Math.sin(b.leakDir), this.angle);
+          this.applyForce(-dir.x * 240, -dir.y * 240, b.wx, b.wy, dt);
+          if (Math.random() < dt * 60) {
+            Particles.spawn({
+              x: b.wx + dir.x * CELL * 0.4, y: b.wy + dir.y * CELL * 0.4,
+              vx: this.vel.x + dir.x * rand(60, 140) + rand(-15, 15),
+              vy: this.vel.y + dir.y * rand(60, 140) + rand(-15, 15),
+              life: rand(0.4, 0.9), size: rand(1.5, 3), color: '255,180,84',
+              drag: 0.94, glow: true
+            });
+          }
         }
       }
 
@@ -190,17 +207,101 @@ class Ship {
         if (Math.random() < dt * 3.5) {
           Events.emit('spark', {});
           Particles.burst(b.wx, b.wy, 5, { color: '163,230,53', spMax: 130, life: 0.3, glow: true });
+          Lights.flash(b.wx, b.wy, 50, '163,230,53', 0.35, 0.12);
         }
       }
+
+      // bloques muy dañados humean
+      if (b.hp < def.hp * 0.35 && Math.random() < dt * 3) this.smoke(b);
     }
+
+    // escudo: recarga con energía tras un tiempo sin recibir daño
+    const cap = this.shieldCap();
+    if (cap > 0) {
+      this.shieldDelay -= dt;
+      this.shieldFlash = Math.max(0, this.shieldFlash - dt * 2.4);
+      if (this.shield < cap && this.shieldDelay <= 0) {
+        let regen = 0, cost = 0, n = 0;
+        for (const b of this.blockArr) if (b.def.shieldCap) {
+          regen += b.def.shieldRegen * (b.hp < b.def.hp * 0.5 ? 0.4 : 1);
+          cost += b.def.shieldCost; n++;
+        }
+        const want = Math.min(regen * dt, cap - this.shield);
+        const price = want * (cost / Math.max(n, 1));
+        const got = price > 0 ? this.drawPower(price) / (cost / Math.max(n, 1)) : 0;
+        this.shield += got;
+      }
+    }
+  }
+
+  smoke(b) {
+    Particles.spawn({
+      x: b.wx + rand(-4, 4), y: b.wy + rand(-4, 4),
+      vx: this.vel.x * 0.6 + rand(-14, 14), vy: this.vel.y * 0.6 + rand(-14, 14),
+      life: rand(0.8, 1.7), size: rand(2, 4), color: '116,124,134',
+      drag: 0.96, grow: 3.5
+    });
+  }
+
+  /* reparación en vuelo: suelda el bloque más dañado consumiendo energía */
+  doRepair(dt) {
+    let worst = null, worstRatio = 0.999;
+    for (const b of this.blockArr) {
+      const r = b.hp / b.def.hp;
+      if (r < worstRatio) { worstRatio = r; worst = b; }
+    }
+    this.repairingBlock = worst;
+    if (!worst) return;
+
+    const RATE = 14, COST = 1.6;             // PV/s y energía por PV
+    const want = Math.min(RATE * dt, worst.def.hp - worst.hp);
+    const got = this.drawPower(want * COST) / COST;
+    if (got <= 0.0001) { this.repairingBlock = null; return; }
+    worst.hp = Math.min(worst.def.hp, worst.hp + got);
+
+    // chispas de soldadura
+    if (Math.random() < dt * 26) {
+      Particles.spawn({
+        x: worst.wx + rand(-6, 6), y: worst.wy + rand(-6, 6),
+        vx: this.vel.x + rand(-50, 50), vy: this.vel.y + rand(-50, 50),
+        life: rand(0.15, 0.4), size: rand(0.8, 1.8), color: '150,235,255',
+        drag: 0.9, glow: true
+      });
+      Lights.add(worst.wx, worst.wy, 42, '110,231,255', 0.3);
+    }
+    if (Math.random() < dt * 9) Events.emit('repair:tick', {});
   }
 
   /* control de vuelo: asigna encendido a cada propulsor según la intención */
   control(dt) {
     const it = this.intents;
+    const assist = this.faction === 'player' && Settings.assist;
     const fuelAvail = this.totalFuel() > 0.001;
     let fx = 0, fy = 0, torque = 0;
     this.throttleTotal = 0;
+
+    // ASISTIDO: intenciones de frenado automático cuando no hay entrada
+    let br = null;
+    const noTrans = !it.fwd && !it.back && !it.latL && !it.latR;
+    if (assist && noTrans) {
+      const lv = rotV(this.vel.x, this.vel.y, -this.angle);
+      const sp = Math.hypot(lv.x, lv.y);
+      if (sp > 8) {
+        br = {
+          fwd:  lv.y >  8 ? clamp( lv.y / 240, 0, 1) : 0,
+          back: lv.y < -8 ? clamp(-lv.y / 240, 0, 1) : 0,
+          latL: lv.x >  8 ? clamp( lv.x / 240, 0, 1) : 0,
+          latR: lv.x < -8 ? clamp(-lv.x / 240, 0, 1) : 0
+        };
+      } else if (sp > 0.2 && !this.grounded) {
+        this.vel.x *= Math.pow(0.05, dt);
+        this.vel.y *= Math.pow(0.05, dt);
+      }
+    }
+    if (assist && !it.turnL && !it.turnR) this.angVel *= Math.pow(0.18, dt);
+
+    const eff_ = k => Math.max(it[k] || 0, br ? br[k] : 0);
+    const eFwd = eff_('fwd'), eBack = eff_('back'), eLatL = eff_('latL'), eLatR = eff_('latR');
 
     for (const b of this.blockArr) {
       const def = b.def;
@@ -212,47 +313,50 @@ class Ship {
 
       if (fuelAvail) {
         // traslación: activar si el empuje apunta a donde se quiere ir
-        if (it.fwd  && dir.y < -0.5) act = Math.max(act, it.fwd);
-        if (it.back && dir.y >  0.5) act = Math.max(act, it.back);
-        if (it.latL && dir.x < -0.5) act = Math.max(act, it.latL);
-        if (it.latR && dir.x >  0.5) act = Math.max(act, it.latR);
+        if (eFwd  && dir.y < -0.5) act = Math.max(act, eFwd);
+        if (eBack && dir.y >  0.5) act = Math.max(act, eBack);
+        if (eLatL && dir.x < -0.5) act = Math.max(act, eLatL);
+        if (eLatR && dir.x >  0.5) act = Math.max(act, eLatR);
         // giro: activar si su par ayuda al giro pedido
         const lever = Math.abs(tq) / (def.thrust * CELL);
         if (lever > 0.25) {
-          if (it.turnR && tq > 0) act = Math.max(act, 1);
-          if (it.turnL && tq < 0) act = Math.max(act, 1);
+          if (it.turnR && tq > 0) act = Math.max(act, it.turnR);
+          if (it.turnL && tq < 0) act = Math.max(act, it.turnL);
           if (it.killRot || (this.sas && !it.turnL && !it.turnR)) {
-            // amortiguar rotación con los propulsores adecuados
             const damp = clamp(-this.angVel * Math.sign(tq) * 0.8, 0, 1);
             if (Math.abs(this.angVel) > 0.05) act = Math.max(act, damp * (it.killRot ? 1 : 0.6));
           }
         }
       }
 
-      b.throttle += (act - b.throttle) * Math.min(1, dt * 14);
+      const spool = def.slowSpool ? 3.5 : 14;
+      b.throttle += (act - b.throttle) * Math.min(1, dt * spool);
       if (b.throttle < 0.02) { b.throttle = Math.max(0, b.throttle - dt); continue; }
 
       const need = def.fuelUse * b.throttle * dt;
       const got = this.drawFuel(need);
-      const eff = need > 0 ? b.throttle * (got / need) : 0;
-      if (eff <= 0.001) continue;
+      const effT = need > 0 ? b.throttle * (got / need) : 0;
+      if (effT <= 0.001) continue;
 
-      const F = def.thrust * eff;
+      const F = def.thrust * effT;
       fx += dir.x * F; fy += dir.y * F;
-      torque += tq * eff;
-      this.throttleTotal += eff * (def.thrust > 3000 ? 1 : 0.3);
+      torque += tq * effT;
+      this.throttleTotal += effT * (def.thrust > 3000 ? 1 : 0.3);
 
-      // pluma de escape
+      // pluma de escape + luz de tobera
       const wdir = rotV(dir.x, dir.y, this.angle);
+      const big = def.thrust > 3000;
       const ex = b.wx - wdir.x * CELL * 0.6, ey = b.wy - wdir.y * CELL * 0.6;
-      const rate = dt * (def.thrust > 3000 ? 110 : 45) * eff;
+      Lights.add(ex - wdir.x * 12, ey - wdir.y * 12,
+        (big ? 55 : 26) + 40 * effT, '110,231,255', 0.2 * effT);
+      const rate = dt * (big ? 110 : 45) * effT;
       let nP = Math.floor(rate) + (Math.random() < rate % 1 ? 1 : 0);
       while (nP-- > 0) {
         Particles.spawn({
           x: ex + rand(-3, 3), y: ey + rand(-3, 3),
-          vx: this.vel.x - wdir.x * rand(220, 380) + rand(-25, 25),
-          vy: this.vel.y - wdir.y * rand(220, 380) + rand(-25, 25),
-          life: rand(0.12, 0.4), size: rand(1.2, 2.6),
+          vx: this.vel.x - wdir.x * rand(220, 400) + rand(-25, 25),
+          vy: this.vel.y - wdir.y * rand(220, 400) + rand(-25, 25),
+          life: rand(0.12, 0.4), size: rand(1.2, 2.8),
           color: Math.random() < 0.75 ? '140,220,255' : '255,240,200',
           drag: 0.92, glow: true
         });
@@ -268,24 +372,26 @@ class Ship {
     }
     if (gyroT > 0) {
       let want = 0;
-      if (it.turnR) want += 1;
-      if (it.turnL) want -= 1;
-      if (want === 0 && (it.killRot || this.sas)) {
+      if (it.turnR) want += it.turnR;
+      if (it.turnL) want -= it.turnL;
+      if (want === 0 && (it.killRot || this.sas || assist)) {
         want = clamp(-this.angVel * this.inertia / (gyroT * 0.25), -1, 1);
         if (Math.abs(this.angVel) < 0.01) want = 0;
       }
       if (want !== 0) {
         const need = gyroUse * Math.abs(want) * dt;
         const got = this.drawPower(need);
-        const eff = need > 0 ? got / need : 0;
-        torque += gyroT * want * eff;
+        const effG = need > 0 ? got / need : 0;
+        torque += gyroT * want * effG;
       }
     }
 
-    // aplicar fuerzas en el marco del mundo
+    // aplicar fuerzas en el marco del mundo + registrar aceleración sentida
     const wf = rotV(fx, fy, this.angle);
-    this.vel.x += wf.x / this.mass * dt;
-    this.vel.y += wf.y / this.mass * dt;
+    const ax = wf.x / this.mass, ay = wf.y / this.mass;
+    this.vel.x += ax * dt;
+    this.vel.y += ay * dt;
+    this.felt.x += ax; this.felt.y += ay;
     this.angVel += torque / this.inertia * dt;
   }
 
@@ -301,36 +407,65 @@ class Ship {
     this.vel.y += jy / this.mass;
     const rx = px - this.pos.x, ry = py - this.pos.y;
     this.angVel += (rx * jy - ry * jx) / this.inertia;
+    // los golpes también se "sienten" (efectos de cámara)
+    this.felt.x += jx / this.mass * 30;
+    this.felt.y += jy / this.mass * 30;
   }
 
   /* ---------- armas ---------- */
 
-  fireLasers(world) {
+  fireWeapons(world) {
     for (const b of this.blockArr) {
+      // láser: instantáneo, por raycast
       const L = b.def.laser;
-      if (!L || b.cooldown > 0) continue;
-      if (this.drawPower(L.cost) < L.cost * 0.999) continue;
-      b.cooldown = L.cooldown;
+      if (L && b.cooldown <= 0 && this.drawPower(L.cost) >= L.cost * 0.999) {
+        b.cooldown = L.cooldown;
+        const dirL = DIRS[b.rot];
+        const dir = rotV(dirL.x, dirL.y, this.angle);
+        const ox = b.wx + dir.x * CELL * 0.6, oy = b.wy + dir.y * CELL * 0.6;
+        const hit = world.raycast(ox, oy, dir.x, dir.y, L.range, this);
+        const ex = hit ? hit.x : ox + dir.x * L.range;
+        const ey = hit ? hit.y : oy + dir.y * L.range;
+        const color = this.faction === 'player' ? '110,231,255' : '255,110,110';
+        world.beams.push({ x1: ox, y1: oy, x2: ex, y2: ey, life: 0.09, maxLife: 0.09, color });
+        Events.emit('laser:fire', { ship: this });
+        if (hit) {
+          if (hit.shieldHit) {
+            hit.ship.hitShield(L.dmg, hit.x, hit.y);
+          } else {
+            Events.emit('laser:hit', { x: hit.x, y: hit.y, color });
+            hit.ship.damageBlock(hit.block, L.dmg, hit.x, hit.y);
+          }
+        }
+      }
 
-      const dirL = DIRS[b.rot];
-      const dir = rotV(dirL.x, dirL.y, this.angle);
-      const ox = b.wx + dir.x * CELL * 0.6, oy = b.wy + dir.y * CELL * 0.6;
-      const hit = world.raycast(ox, oy, dir.x, dir.y, L.range, this);
-
-      const ex = hit ? hit.x : ox + dir.x * L.range;
-      const ey = hit ? hit.y : oy + dir.y * L.range;
-      world.beams.push({
-        x1: ox, y1: oy, x2: ex, y2: ey,
-        life: 0.09, maxLife: 0.09,
-        color: this.faction === 'player' ? '110,231,255' : '255,110,110'
-      });
-      Events.emit('laser:fire', { ship: this });
-
-      if (hit) {
-        Events.emit('laser:hit', { x: hit.x, y: hit.y, color: this.faction === 'player' ? '110,231,255' : '255,110,110' });
-        hit.ship.damageBlock(hit.block, L.dmg, hit.x, hit.y);
+      // cañón: proyectil físico con retroceso
+      const C = b.def.cannon;
+      if (C && b.cooldown <= 0 && this.drawPower(C.cost) >= C.cost * 0.999) {
+        b.cooldown = C.cooldown;
+        const dirL = DIRS[b.rot];
+        const dir = rotV(dirL.x, dirL.y, this.angle);
+        const ox = b.wx + dir.x * CELL * 0.75, oy = b.wy + dir.y * CELL * 0.75;
+        world.spawnProjectile({
+          x: ox, y: oy,
+          vx: this.vel.x + dir.x * C.speed, vy: this.vel.y + dir.y * C.speed,
+          dmg: C.dmg, punch: C.punch, life: C.life,
+          owner: this, faction: this.faction,
+          color: this.faction === 'player' ? '190,235,255' : '255,170,140'
+        });
+        this.applyImpulse(-dir.x * C.punch, -dir.y * C.punch, ox, oy);
+        Events.emit('cannon:fire', { x: ox, y: oy });
+        Particles.burst(ox, oy, 5, { color: '255,210,140', spMax: 120, life: 0.2, glow: true, vx: dir.x * 80, vy: dir.y * 80 });
       }
     }
+  }
+
+  hitShield(dmg, x, y) {
+    this.shield = Math.max(0, this.shield - dmg);
+    this.shieldDelay = 2.5;
+    this.shieldFlash = 1;
+    this.shieldHitAngle = Math.atan2(y - this.pos.y, x - this.pos.x);
+    Events.emit('shield:hit', { x, y, ship: this });
   }
 
   /* raycast contra las hitboxes exactas (AABB por bloque en marco local) */
@@ -433,12 +568,44 @@ class Ship {
     ctx.translate(this.pos.x, this.pos.y);
     ctx.rotate(this.angle);
     for (const b of this.blockArr) {
+      // contorno solo donde no hay vecino: casco sin costuras
+      const edges = {
+        n: !this.blocks.has(keyOf(b.gx, b.gy - 1)),
+        e: !this.blocks.has(keyOf(b.gx + 1, b.gy)),
+        s: !this.blocks.has(keyOf(b.gx, b.gy + 1)),
+        w: !this.blocks.has(keyOf(b.gx - 1, b.gy))
+      };
       ctx.save();
       ctx.translate(b.lx, b.ly);
-      drawBlock(ctx, b, CELL);
+      drawBlock(ctx, b, CELL, edges);
+      // marco de soldadura durante la reparación
+      if (this.repairingBlock === b) {
+        ctx.strokeStyle = `rgba(110,231,255,${0.4 + 0.3 * Math.sin(performance.now() / 90)})`;
+        ctx.lineWidth = 1;
+        ctx.strokeRect(-CELL / 2 - 2, -CELL / 2 - 2, CELL + 4, CELL + 4);
+      }
       ctx.restore();
     }
     ctx.restore();
+
+    // burbuja de escudo (en marco de mundo)
+    const cap = this.shieldCap();
+    if (cap > 0 && this.shield > 0.5) {
+      const R = this.shieldR();
+      const base = 0.05 + (this.shield / cap) * 0.06 + this.shieldFlash * 0.22;
+      ctx.strokeStyle = `rgba(110,231,255,${base})`;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(this.pos.x, this.pos.y, R, 0, TAU);
+      ctx.stroke();
+      if (this.shieldFlash > 0.03) {
+        ctx.strokeStyle = `rgba(160,240,255,${this.shieldFlash * 0.8})`;
+        ctx.lineWidth = 2.2;
+        ctx.beginPath();
+        ctx.arc(this.pos.x, this.pos.y, R, this.shieldHitAngle - 0.65, this.shieldHitAngle + 0.65);
+        ctx.stroke();
+      }
+    }
   }
 }
 

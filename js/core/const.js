@@ -1,5 +1,5 @@
 /* ============================================================
-   Constantes y utilidades matemáticas compartidas
+   Constantes, utilidades matemáticas y ajustes globales
    ============================================================ */
 'use strict';
 
@@ -29,3 +29,17 @@ function rotV(x, y, ang) {
 }
 
 const keyOf = (gx, gy) => gx + ',' + gy;
+
+/* ---------- ajustes del jugador (persistentes) ----------
+   assist=true  → modo ASISTIDO: amortiguación automática de giro
+                  y deriva, vuelo accesible.
+   assist=false → modo REALISTA: física newtoniana pura, solo SAS. */
+const Settings = {
+  assist: (localStorage.getItem('orbita_assist') || '1') === '1',
+  setAssist(v) {
+    this.assist = v;
+    try { localStorage.setItem('orbita_assist', v ? '1' : '0'); } catch (e) {}
+    Events.emit('settings:assist', v);
+  },
+  toggleAssist() { this.setAssist(!this.assist); return this.assist; }
+};

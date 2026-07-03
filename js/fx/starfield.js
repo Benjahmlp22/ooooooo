@@ -34,21 +34,26 @@ class Starfield {
       // el blob debe quedar entero dentro del tile para no crear costuras
       const x = rand(r, 512 - r), y = rand(r, 512 - r);
       const g = nc.createRadialGradient(x, y, 0, x, y, r);
-      g.addColorStop(0, `rgba(${colors[i % 3]},0.03)`);
-      g.addColorStop(0.7, `rgba(${colors[i % 3]},0.012)`);
+      g.addColorStop(0, `rgba(${colors[i % 3]},0.018)`);
+      g.addColorStop(0.7, `rgba(${colors[i % 3]},0.007)`);
       g.addColorStop(1, 'rgba(0,0,0,0)');
       nc.fillStyle = g;
       nc.fillRect(x - r, y - r, r * 2, r * 2);
     }
   }
 
-  draw(ctx, cam, w, h, velX, velY, t) {
+  draw(ctx, cam, w, h, velX, velY, t, fade) {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
+    // dentro de la atmósfera las estrellas y nebulosas se desvanecen
+    const vis = 1 - clamp(fade || 0, 0, 1) * 0.9;
+    if (vis <= 0.02) return;
     // nebulosa con parallax mínimo
+    ctx.globalAlpha = vis;
     const nx = -((cam.x * 0.05) % 512), ny = -((cam.y * 0.05) % 512);
     for (let ix = -1; ix <= Math.ceil(w / 512); ix++)
       for (let iy = -1; iy <= Math.ceil(h / 512); iy++)
         ctx.drawImage(this.nebula, nx + ix * 512, ny + iy * 512);
+    ctx.globalAlpha = 1;
 
     const speed = Math.hypot(velX, velY);
     for (const L of this.layers) {
@@ -62,7 +67,7 @@ class Starfield {
         let x = ((s.x - ox) % R + R) % R - (R - w) / 2;
         let y = ((s.y - oy) % R + R) % R - (R - h) / 2;
         if (x < -20 || x > w + 20 || y < -20 || y > h + 20) continue;
-        const tw = 0.75 + 0.25 * Math.sin(t * 2 + s.tw);
+        const tw = (0.75 + 0.25 * Math.sin(t * 2 + s.tw)) * vis;
         if (stretch > 0.8) {
           ctx.strokeStyle = `rgba(200,214,229,${L.a * tw * 0.8})`;
           ctx.lineWidth = L.size;
